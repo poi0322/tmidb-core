@@ -1,0 +1,33 @@
+# .air.toml - Air configuration file for tmidb-core development
+
+# Working directory
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Command to build the main application binary.
+# We build the supervisor, which in turn manages all other processes.
+cmd = "go build -o ./tmp/tmidb-supervisor ./cmd/supervisor"
+
+# The binary to run after building.
+bin = "tmp/tmidb-supervisor"
+
+# Watch these file extensions.
+include_ext = ["go", "toml", "json", "html", "css"]
+
+# Ignore these directories.
+exclude_dir = ["tmp", "vendor", "data", "logs"]
+
+# Trigger a build on new file creation.
+include_file = []
+
+# Delay in milliseconds before restarting the process.
+delay = 1000
+
+[log]
+# Show log time
+time = true
+
+[misc]
+# Delete tmp directory on exit
+clean_on_exit = true

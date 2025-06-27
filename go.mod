@@ -10,6 +10,7 @@ require (
 	github.com/nats-io/nats.go v1.43.0
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/crypto v0.39.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

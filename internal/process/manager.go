@@ -55,6 +55,7 @@ type Manager struct {
 // Process 프로세스 정보
 type Process struct {
 	Name         string            `json:"name"`
+	User         string            `json:"user"`
 	Type         ProcessType       `json:"type"`
 	Command      string            `json:"command"`
 	Args         []string          `json:"args"`
@@ -89,6 +90,7 @@ type Process struct {
 // ProcessConfig 프로세스 설정
 type ProcessConfig struct {
 	Name        string            `json:"name"`
+	User        string            `json:"user"`
 	Type        ProcessType       `json:"type"`
 	Command     string            `json:"command"`
 	Args        []string          `json:"args"`
@@ -182,6 +184,7 @@ func (m *Manager) RegisterProcess(config *ProcessConfig) error {
 
 	process := &Process{
 		Name:         config.Name,
+		User:         config.User,
 		Type:         config.Type,
 		Command:      config.Command,
 		Args:         config.Args,
@@ -234,8 +237,15 @@ func (m *Manager) StartProcess(name string) error {
 	ctx, cancel := context.WithCancel(m.ctx)
 	process.cancel = cancel
 
-	// 명령어 생성
-	cmd := exec.CommandContext(ctx, process.Command, process.Args...)
+	var cmd *exec.Cmd
+	// 명령어 생성 (사용자 지정 여부 확인)
+	if process.User != "" {
+		// runuser -u <user> -- <command> <args...>
+		args := append([]string{"-u", process.User, "--", process.Command}, process.Args...)
+		cmd = exec.CommandContext(ctx, "runuser", args...)
+	} else {
+		cmd = exec.CommandContext(ctx, process.Command, process.Args...)
+	}
 
 	// 작업 디렉토리 설정
 	if process.WorkDir != "" {

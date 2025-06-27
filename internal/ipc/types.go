@@ -28,6 +28,32 @@ const (
 	MessageTypeSystemHealth MessageType = "system_health"
 	MessageTypeSystemStats  MessageType = "system_stats"
 
+	// 설정 관련
+	MessageTypeConfigGet      MessageType = "config_get"
+	MessageTypeConfigSet      MessageType = "config_set"
+	MessageTypeConfigList     MessageType = "config_list"
+	MessageTypeConfigReset    MessageType = "config_reset"
+	MessageTypeConfigImport   MessageType = "config_import"
+	MessageTypeConfigValidate MessageType = "config_validate"
+
+	// 백업 관련
+	MessageTypeBackupCreate    MessageType = "backup_create"
+	MessageTypeBackupRestore   MessageType = "backup_restore"
+	MessageTypeBackupList      MessageType = "backup_list"
+	MessageTypeBackupDelete    MessageType = "backup_delete"
+	MessageTypeBackupVerify    MessageType = "backup_verify"
+	MessageTypeBackupProgress  MessageType = "backup_progress"
+	MessageTypeRestoreProgress MessageType = "restore_progress"
+
+	// 진단 관련
+	MessageTypeDiagnoseAll          MessageType = "diagnose_all"
+	MessageTypeDiagnoseComponent    MessageType = "diagnose_component"
+	MessageTypeDiagnoseConnectivity MessageType = "diagnose_connectivity"
+	MessageTypeDiagnosePerformance  MessageType = "diagnose_performance"
+	MessageTypeDiagnoseLogs         MessageType = "diagnose_logs"
+	MessageTypeDiagnoseFix          MessageType = "diagnose_fix"
+	MessageTypeDiagnoseResult       MessageType = "diagnose_result"
+
 	// 응답
 	MessageTypeResponse MessageType = "response"
 	MessageTypeError    MessageType = "error"

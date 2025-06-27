@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -69,9 +70,9 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		SocketPath:      "/tmp/tmidb-supervisor.sock",
-		PostgreSQLPath:  "postgres",
-		NATSPath:        "nats-server",
-		SeaweedFSPath:   "weed",
+		PostgreSQLPath:  "/usr/local/bin/postgres-wrapper",
+		NATSPath:        "/usr/local/bin/nats-wrapper",
+		SeaweedFSPath:   "/usr/local/bin/weed-wrapper",
 		PostgreSQLPort:  5432,
 		NATSPort:        4222,
 		SeaweedFSPort:   9333,
@@ -253,37 +254,55 @@ func (s *Supervisor) startExternalServices() error {
 	// Register PostgreSQL
 	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
 		Name:        "postgresql",
+		User:        "postgres",
 		Type:        process.TypeExternal,
-		Command:     s.config.PostgreSQLPath,
-		Args:        []string{"-D", "./data/postgresql", "-p", fmt.Sprintf("%d", s.config.PostgreSQLPort)},
+		Command:     "postgres",
+		Args:        []string{"-D", "/data/postgresql", "-k", "/var/run/postgresql"},
 		AutoRestart: true,
 		MaxRestarts: 3,
 	}); err != nil {
 		log.Printf("Warning: failed to register PostgreSQL: %v", err)
+	} else {
+		// Start PostgreSQL
+		if err := s.processManager.StartProcess("postgresql"); err != nil {
+			log.Printf("Warning: failed to start PostgreSQL: %v", err)
+		}
 	}
 
 	// Register NATS
 	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
 		Name:        "nats",
+		User:        "natsuser",
 		Type:        process.TypeExternal,
-		Command:     s.config.NATSPath,
-		Args:        []string{"-p", fmt.Sprintf("%d", s.config.NATSPort), "-m", "8222"},
+		Command:     "nats-server",
+		Args:        []string{"-sd", "/data/nats"},
 		AutoRestart: true,
 		MaxRestarts: 3,
 	}); err != nil {
 		log.Printf("Warning: failed to register NATS: %v", err)
+	} else {
+		// Start NATS
+		if err := s.processManager.StartProcess("nats"); err != nil {
+			log.Printf("Warning: failed to start NATS: %v", err)
+		}
 	}
 
 	// Register SeaweedFS
 	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
 		Name:        "seaweedfs",
+		User:        "seaweeduser",
 		Type:        process.TypeExternal,
-		Command:     s.config.SeaweedFSPath,
-		Args:        []string{"master", "-port", fmt.Sprintf("%d", s.config.SeaweedFSPort), "-mdir", "./data/seaweedfs/master"},
+		Command:     "weed",
+		Args:        []string{"master", "-mdir=/data/seaweedfs/master"},
 		AutoRestart: true,
 		MaxRestarts: 3,
 	}); err != nil {
 		log.Printf("Warning: failed to register SeaweedFS: %v", err)
+	} else {
+		// Start SeaweedFS
+		if err := s.processManager.StartProcess("seaweedfs"); err != nil {
+			log.Printf("Warning: failed to start SeaweedFS: %v", err)
+		}
 	}
 
 	return nil
@@ -334,89 +353,52 @@ func (s *Supervisor) isPortReady(port int) bool {
 	return true
 }
 
-// startInternalComponents registers and starts internal tmiDB components
+// startInternalComponents starts API, Data Manager, Data Consumer
 func (s *Supervisor) startInternalComponents() error {
 	log.Println("Starting internal components...")
 
-	// Check if we're in development mode
-	devMode := os.Getenv("TMIDB_DEV_MODE") == "true"
-	hotReload := os.Getenv("TMIDB_HOT_RELOAD") == "true"
-
-	if devMode && hotReload {
-		log.Println("Development mode: Using Air for hot reload")
-
-		// Register API component with Air
-		if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-			Name:        "api",
-			Type:        process.TypeInternal,
-			Command:     "air",
-			Args:        []string{"-c", ".air.api.toml"},
-			WorkDir:     "./cmd/api",
-			AutoRestart: true,
-			MaxRestarts: 5,
-		}); err != nil {
-			log.Printf("Warning: failed to register API with Air: %v", err)
-		}
-
-		// Register Data Manager with Air
-		if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-			Name:        "data-manager",
-			Type:        process.TypeInternal,
-			Command:     "air",
-			Args:        []string{"-c", ".air.data-manager.toml"},
-			WorkDir:     "./cmd/data-manager",
-			AutoRestart: true,
-			MaxRestarts: 5,
-		}); err != nil {
-			log.Printf("Warning: failed to register Data Manager with Air: %v", err)
-		}
-
-		// Register Data Consumer with Air
-		if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-			Name:        "data-consumer",
-			Type:        process.TypeInternal,
-			Command:     "air",
-			Args:        []string{"-c", ".air.data-consumer.toml"},
-			WorkDir:     "./cmd/data-consumer",
-			AutoRestart: true,
-			MaxRestarts: 5,
-		}); err != nil {
-			log.Printf("Warning: failed to register Data Consumer with Air: %v", err)
-		}
+	// Register API Server
+	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
+		Name:        "api",
+		Type:        process.TypeInternal,
+		Command:     "go",
+		Args:        []string{"run", "./cmd/api"},
+		AutoRestart: true,
+	}); err != nil {
+		log.Printf("Warning: failed to register API: %v", err)
 	} else {
-		log.Println("Production mode: Using compiled binaries")
-
-		// Register API component
-		if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-			Name:        "api",
-			Type:        process.TypeInternal,
-			Command:     "./bin/tmidb-api",
-			AutoRestart: true,
-			MaxRestarts: 5,
-		}); err != nil {
-			log.Printf("Warning: failed to register API: %v", err)
+		if err := s.processManager.StartProcess("api"); err != nil {
+			log.Printf("Warning: failed to start API: %v", err)
 		}
+	}
 
-		// Register Data Manager
-		if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-			Name:        "data-manager",
-			Type:        process.TypeInternal,
-			Command:     "./bin/tmidb-data-manager",
-			AutoRestart: true,
-			MaxRestarts: 5,
-		}); err != nil {
-			log.Printf("Warning: failed to register Data Manager: %v", err)
+	// Register Data Manager
+	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
+		Name:        "data-manager",
+		Type:        process.TypeInternal,
+		Command:     "go",
+		Args:        []string{"run", "./cmd/data-manager"},
+		AutoRestart: true,
+	}); err != nil {
+		log.Printf("Warning: failed to register Data Manager: %v", err)
+	} else {
+		if err := s.processManager.StartProcess("data-manager"); err != nil {
+			log.Printf("Warning: failed to start Data Manager: %v", err)
 		}
+	}
 
-		// Register Data Consumer
-		if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-			Name:        "data-consumer",
-			Type:        process.TypeInternal,
-			Command:     "./bin/tmidb-data-consumer",
-			AutoRestart: true,
-			MaxRestarts: 5,
-		}); err != nil {
-			log.Printf("Warning: failed to register Data Consumer: %v", err)
+	// Register Data Consumer
+	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
+		Name:        "data-consumer",
+		Type:        process.TypeInternal,
+		Command:     "go",
+		Args:        []string{"run", "./cmd/data-consumer"},
+		AutoRestart: true,
+	}); err != nil {
+		log.Printf("Warning: failed to register Data Consumer: %v", err)
+	} else {
+		if err := s.processManager.StartProcess("data-consumer"); err != nil {
+			log.Printf("Warning: failed to start Data Consumer: %v", err)
 		}
 	}
 
@@ -754,4 +736,85 @@ func (s *Supervisor) GetProcessManager() *process.Manager {
 // GetIPCServer returns the IPC server instance
 func (s *Supervisor) GetIPCServer() *ipc.Server {
 	return s.ipcServer
+}
+
+// ensureDataDirectories creates necessary data directories
+func (s *Supervisor) ensureDataDirectories() error {
+	log.Println("Ensuring data directories exist...")
+
+	// Create base data directories with proper ownership
+	dataDirs := []struct {
+		path  string
+		owner string
+	}{
+		{"/data/nats", "natsuser:natsuser"},
+		{"/data/seaweedfs", "seaweeduser:seaweeduser"},
+		{"/data/seaweedfs/master", "seaweeduser:seaweeduser"},
+	}
+
+	for _, dir := range dataDirs {
+		if err := os.MkdirAll(dir.path, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir.path, err)
+		}
+		log.Printf("📁 Created data directory: %s (owner: %s)", dir.path, dir.owner)
+	}
+
+	// Create PostgreSQL data directory with correct ownership
+	if err := s.createPostgreSQLDataDir(); err != nil {
+		return fmt.Errorf("failed to create PostgreSQL data directory: %w", err)
+	}
+
+	// Initialize PostgreSQL data directory if empty
+	if err := s.initializePostgreSQLData(); err != nil {
+		return fmt.Errorf("failed to initialize PostgreSQL data: %w", err)
+	}
+
+	return nil
+}
+
+// createPostgreSQLDataDir creates PostgreSQL data directory with correct ownership
+func (s *Supervisor) createPostgreSQLDataDir() error {
+	dataDir := "/data/postgresql"
+
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return fmt.Errorf("failed to create PostgreSQL data directory: %w", err)
+	}
+
+	log.Printf("📁 Created PostgreSQL data directory: %s", dataDir)
+	return nil
+}
+
+// initializePostgreSQLData initializes PostgreSQL data directory if needed
+func (s *Supervisor) initializePostgreSQLData() error {
+	dataDir := "/data/postgresql"
+
+	// Check if PostgreSQL data directory is already initialized
+	if _, err := os.Stat(filepath.Join(dataDir, "PG_VERSION")); err == nil {
+		log.Println("PostgreSQL data directory already initialized")
+		return nil
+	}
+
+	files, err := os.ReadDir(dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to read postgresql data dir: %w", err)
+	}
+
+	if len(files) > 0 {
+		log.Println("PostgreSQL data directory exists but appears corrupted or not empty, skipping initialization.")
+		return nil
+	}
+
+	log.Println("Initializing PostgreSQL data directory...")
+
+	// Run initdb. This should be run by the user that will own the process,
+	// which is handled by the Dockerfile's USER directive.
+	cmd := exec.Command("initdb", "-D", dataDir, "--encoding=UTF8", "--locale=en_US.UTF-8")
+
+	initOutput, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to initialize PostgreSQL data directory: %w\nOutput: %s", err, string(initOutput))
+	}
+
+	log.Println("PostgreSQL data directory initialized successfully")
+	return nil
 }
