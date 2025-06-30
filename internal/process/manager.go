@@ -390,6 +390,103 @@ func (m *Manager) RestartProcess(name string) error {
 	return m.StartProcess(name)
 }
 
+// AttachProcess 기존에 실행 중인 프로세스에 attach
+func (m *Manager) AttachProcess(name string, pid int) error {
+	m.processesMux.RLock()
+	process, exists := m.processes[name]
+	m.processesMux.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("process %s not found", name)
+	}
+
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
+
+	if process.State == StateRunning {
+		return fmt.Errorf("process %s is already running", name)
+	}
+
+	// Check if the PID is valid and running
+	if !m.isProcessRunning(pid) {
+		return fmt.Errorf("process with PID %d is not running", pid)
+	}
+
+	// Attach to existing process
+	process.PID = pid
+	process.StartTime = time.Now() // We don't know the actual start time, so use current time
+	process.State = StateRunning
+	process.LastError = ""
+	process.cmd = nil // No cmd since we didn't start it
+
+	log.Printf("🔗 Attached to process: %s (PID: %d)", name, pid)
+
+	// Start monitoring the attached process
+	go m.watchAttachedProcess(process)
+
+	return nil
+}
+
+// isProcessRunning checks if a process with given PID is running
+func (m *Manager) isProcessRunning(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+
+	// Check if /proc/[pid] exists
+	_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
+	return err == nil
+}
+
+// watchAttachedProcess monitors an attached process
+func (m *Manager) watchAttachedProcess(process *Process) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			process.mutex.RLock()
+			pid := process.PID
+			name := process.Name
+			autoRestart := process.AutoRestart
+			maxRestarts := process.MaxRestarts
+			restartCount := process.RestartCount
+			process.mutex.RUnlock()
+
+			// Check if process is still running
+			if !m.isProcessRunning(pid) {
+				process.mutex.Lock()
+				process.State = StateError
+				process.LastError = "Process exited unexpectedly"
+				process.PID = 0
+				process.mutex.Unlock()
+
+				log.Printf("❌ Attached process %s (PID: %d) exited unexpectedly", name, pid)
+
+				// Auto-restart if enabled
+				if autoRestart && restartCount < maxRestarts {
+					log.Printf("🔄 Auto-restarting attached process: %s (attempt %d/%d)",
+						name, restartCount+1, maxRestarts)
+
+					process.mutex.Lock()
+					process.RestartCount++
+					process.mutex.Unlock()
+
+					// Wait a moment before restarting
+					go func() {
+						time.Sleep(5 * time.Second)
+						m.RestartProcess(name)
+					}()
+				}
+				return
+			}
+		}
+	}
+}
+
 // GetProcessList 프로세스 목록 조회
 func (m *Manager) GetProcessList() []ipc.ProcessInfo {
 	m.processesMux.RLock()

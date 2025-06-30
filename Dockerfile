@@ -108,6 +108,43 @@ COPY views ./views
 # 바이너리를 시스템 PATH에 추가
 ENV PATH="/app/bin:${PATH}"
 
+# Create entrypoint script that starts all services before supervisor
+RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
+    echo 'set -e' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start PostgreSQL in background' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "🚀 Starting PostgreSQL..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'su - postgres -c "postgres -D /data/postgresql -k /var/run/postgresql" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'POSTGRES_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "PostgreSQL started with PID $POSTGRES_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start NATS in background' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "🚀 Starting NATS..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'su - natsuser -c "nats-server -sd /data/nats" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'NATS_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "NATS started with PID $NATS_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start SeaweedFS in background' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "🚀 Starting SeaweedFS..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'su - seaweeduser -c "weed master -mdir=/data/seaweedfs/master" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'SEAWEED_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "SeaweedFS started with PID $SEAWEED_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Save PIDs for supervisor to attach' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "$POSTGRES_PID" > /var/run/postgresql.pid' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "$NATS_PID" > /var/run/nats.pid' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "$SEAWEED_PID" > /var/run/seaweedfs.pid' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Wait a moment for services to start' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'sleep 3' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "✅ All services started successfully"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start supervisor to manage services' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'exec tmidb-supervisor' >> /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
 # 컨테이너 시작 시 실행될 Supervisor
 # Supervisor는 내부적으로 DB, NATS, SeaweedFS 및 Go 애플리케이션들을 관리합니다.
 CMD ["tmidb-supervisor"]

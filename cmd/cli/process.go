@@ -22,14 +22,40 @@ var processListCmd = &cobra.Command{
 	Short: "List all tmiDB processes",
 	Long:  "Display all running tmiDB processes with their status",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("📋 tmiDB Processes:")
-
 		processes, err := client.GetProcessList()
 		if err != nil {
 			fmt.Printf("❌ Failed to get process list: %v\n", err)
 			os.Exit(1)
 		}
 
+		// 출력 형식 확인
+		formatter := getFormatter(cmd)
+		
+		// JSON 출력인 경우
+		if formatter.format == "json" || formatter.format == "json-pretty" {
+			// ProcessInfo를 JSON 호환 형식으로 변환
+			var processData []interface{}
+			for _, process := range processes {
+				processMap := map[string]interface{}{
+					"name":       process.Name,
+					"status":     process.Status,
+					"pid":        process.PID,
+					"uptime":     process.Uptime.Nanoseconds(),
+					"memory":     process.Memory,
+					"cpu":        process.CPU,
+					"enabled":    process.Enabled,
+					"start_time": process.StartTime.Format("2006-01-02T15:04:05Z07:00"),
+				}
+				processData = append(processData, processMap)
+			}
+			
+			formatted := FormatProcessList(processData)
+			formatter.Print(formatted)
+			return
+		}
+
+		// 기본 텍스트 출력
+		fmt.Println("📋 tmiDB Processes:")
 		fmt.Printf("%-20s %-12s %-8s %-12s %-10s %-8s\n",
 			"NAME", "STATUS", "PID", "UPTIME", "MEMORY", "CPU")
 		fmt.Println(strings.Repeat("-", 80))

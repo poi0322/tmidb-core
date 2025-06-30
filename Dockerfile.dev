@@ -58,10 +58,32 @@ RUN mkdir -p /app /data/postgresql /data/seaweedfs /data/nats /var/run/postgresq
     chown -R postgres:postgres /data/postgresql /var/run/postgresql && \
     chown -R natsuser:natsuser /data/nats && \
     chown -R seaweeduser:seaweeduser /data/seaweedfs && \
+    chmod 700 /data/postgresql && \
     chmod 775 /var/run/postgresql && \
     chmod g+s /var/run/postgresql
 
-# Initialize PostgreSQL data directory as the postgres user
+# Create PostgreSQL initialization script
+RUN echo '#!/bin/bash' > /usr/local/bin/init-postgres.sh && \
+    echo 'set -e' >> /usr/local/bin/init-postgres.sh && \
+    echo '' >> /usr/local/bin/init-postgres.sh && \
+    echo '# Check if PostgreSQL data directory is initialized' >> /usr/local/bin/init-postgres.sh && \
+    echo 'if [ ! -f "/data/postgresql/PG_VERSION" ]; then' >> /usr/local/bin/init-postgres.sh && \
+    echo '    echo "Initializing PostgreSQL data directory..."' >> /usr/local/bin/init-postgres.sh && \
+    echo '    # Ensure correct ownership' >> /usr/local/bin/init-postgres.sh && \
+    echo '    chown -R postgres:postgres /data/postgresql' >> /usr/local/bin/init-postgres.sh && \
+    echo '    chmod 700 /data/postgresql' >> /usr/local/bin/init-postgres.sh && \
+    echo '    # Initialize as postgres user' >> /usr/local/bin/init-postgres.sh && \
+    echo '    su - postgres -c "initdb -D /data/postgresql --encoding=UTF8 --locale=en_US.UTF-8"' >> /usr/local/bin/init-postgres.sh && \
+    echo '    echo "PostgreSQL data directory initialized successfully"' >> /usr/local/bin/init-postgres.sh && \
+    echo 'else' >> /usr/local/bin/init-postgres.sh && \
+    echo '    echo "PostgreSQL data directory already initialized"' >> /usr/local/bin/init-postgres.sh && \
+    echo '    # Ensure correct ownership even if already initialized' >> /usr/local/bin/init-postgres.sh && \
+    echo '    chown -R postgres:postgres /data/postgresql' >> /usr/local/bin/init-postgres.sh && \
+    echo '    chmod 700 /data/postgresql' >> /usr/local/bin/init-postgres.sh && \
+    echo 'fi' >> /usr/local/bin/init-postgres.sh && \
+    chmod +x /usr/local/bin/init-postgres.sh
+
+# Initialize PostgreSQL data directory as the postgres user (for build-time)
 USER postgres
 RUN initdb -D /data/postgresql --encoding=UTF8 --locale=en_US.UTF-8
 USER root
@@ -78,6 +100,46 @@ ENV PATH="/app/bin:${GOPATH}/bin:${PATH}"
 # Copy remaining source code.
 # Binaries will be built by Air inside the container.
 COPY . .
+
+# Create entrypoint script that starts all services
+RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
+    echo 'set -e' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Initialize PostgreSQL if needed' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '/usr/local/bin/init-postgres.sh' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start PostgreSQL in background' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "🚀 Starting PostgreSQL..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'su - postgres -c "postgres -D /data/postgresql -k /var/run/postgresql" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'POSTGRES_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "PostgreSQL started with PID $POSTGRES_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start NATS in background' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "🚀 Starting NATS..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'su - natsuser -c "nats-server -sd /data/nats" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'NATS_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "NATS started with PID $NATS_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start SeaweedFS in background' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "🚀 Starting SeaweedFS..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'su - seaweeduser -c "weed master -mdir=/data/seaweedfs/master" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'SEAWEED_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "SeaweedFS started with PID $SEAWEED_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Save PIDs for supervisor to attach' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "$POSTGRES_PID" > /var/run/postgresql.pid' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "$NATS_PID" > /var/run/nats.pid' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "$SEAWEED_PID" > /var/run/seaweedfs.pid' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Wait a moment for services to start' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'sleep 3' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "✅ All services started successfully"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Start the application' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'exec "$@"' >> /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Default command can be overridden, but is useful for standalone runs.
 CMD ["air", "-c", ".air.toml"] 

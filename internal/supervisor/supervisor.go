@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -247,65 +249,267 @@ func (s *Supervisor) Stop() error {
 	return nil
 }
 
-// startExternalServices starts PostgreSQL, NATS, and SeaweedFS
+// startExternalServices attaches to already running services or starts them if not running
 func (s *Supervisor) startExternalServices() error {
-	log.Println("Starting external services...")
+	log.Println("Attaching to external services...")
 
-	// Register PostgreSQL
-	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-		Name:        "postgresql",
-		User:        "postgres",
-		Type:        process.TypeExternal,
-		Command:     "postgres",
-		Args:        []string{"-D", "/data/postgresql", "-k", "/var/run/postgresql"},
-		AutoRestart: true,
-		MaxRestarts: 3,
-	}); err != nil {
-		log.Printf("Warning: failed to register PostgreSQL: %v", err)
-	} else {
-		// Start PostgreSQL
-		if err := s.processManager.StartProcess("postgresql"); err != nil {
-			log.Printf("Warning: failed to start PostgreSQL: %v", err)
+	// Attach to PostgreSQL
+	if err := s.attachToService("postgresql", "/var/run/postgresql.pid"); err != nil {
+		log.Printf("Warning: failed to attach to PostgreSQL: %v", err)
+		// Try to start if not running
+		if err := s.startSystemService("postgresql"); err != nil {
+			log.Printf("Warning: failed to start PostgreSQL service: %v", err)
 		}
 	}
 
-	// Register NATS
-	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-		Name:        "nats",
-		User:        "natsuser",
-		Type:        process.TypeExternal,
-		Command:     "nats-server",
-		Args:        []string{"-sd", "/data/nats"},
-		AutoRestart: true,
-		MaxRestarts: 3,
-	}); err != nil {
-		log.Printf("Warning: failed to register NATS: %v", err)
-	} else {
-		// Start NATS
-		if err := s.processManager.StartProcess("nats"); err != nil {
-			log.Printf("Warning: failed to start NATS: %v", err)
+	// Attach to NATS
+	if err := s.attachToService("nats", "/var/run/nats.pid"); err != nil {
+		log.Printf("Warning: failed to attach to NATS: %v", err)
+		// Try to start if not running
+		if err := s.startSystemService("nats"); err != nil {
+			log.Printf("Warning: failed to start NATS service: %v", err)
 		}
 	}
 
-	// Register SeaweedFS
-	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
-		Name:        "seaweedfs",
-		User:        "seaweeduser",
-		Type:        process.TypeExternal,
-		Command:     "weed",
-		Args:        []string{"master", "-mdir=/data/seaweedfs/master"},
-		AutoRestart: true,
-		MaxRestarts: 3,
-	}); err != nil {
-		log.Printf("Warning: failed to register SeaweedFS: %v", err)
-	} else {
-		// Start SeaweedFS
-		if err := s.processManager.StartProcess("seaweedfs"); err != nil {
-			log.Printf("Warning: failed to start SeaweedFS: %v", err)
+	// Attach to SeaweedFS
+	if err := s.attachToService("seaweedfs", "/var/run/seaweedfs.pid"); err != nil {
+		log.Printf("Warning: failed to attach to SeaweedFS: %v", err)
+		// Try to start if not running
+		if err := s.startSystemService("seaweedfs"); err != nil {
+			log.Printf("Warning: failed to start SeaweedFS service: %v", err)
 		}
 	}
 
 	return nil
+}
+
+// attachToService attaches supervisor to an already running service
+func (s *Supervisor) attachToService(serviceName, pidFile string) error {
+	// Read PID from file
+	pidData, err := os.ReadFile(pidFile)
+	if err != nil {
+		return fmt.Errorf("failed to read PID file %s: %w", pidFile, err)
+	}
+
+	pidStr := strings.TrimSpace(string(pidData))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		return fmt.Errorf("invalid PID in file %s: %w", pidFile, err)
+	}
+
+	// Check if process is still running
+	if !s.isProcessRunning(pid) {
+		return fmt.Errorf("process with PID %d is not running", pid)
+	}
+
+	// Register service with existing PID
+	var serviceType process.ProcessType
+	var user string
+	var command string
+	var args []string
+
+	switch serviceName {
+	case "postgresql":
+		serviceType = process.TypeExternal
+		user = "postgres"
+		command = "postgres"
+		args = []string{"-D", "/data/postgresql", "-k", "/var/run/postgresql"}
+	case "nats":
+		serviceType = process.TypeExternal
+		user = "natsuser"
+		command = "nats-server"
+		args = []string{"-sd", "/data/nats"}
+	case "seaweedfs":
+		serviceType = process.TypeExternal
+		user = "seaweeduser"
+		command = "weed"
+		args = []string{"master", "-mdir=/data/seaweedfs/master"}
+	default:
+		return fmt.Errorf("unknown service: %s", serviceName)
+	}
+
+	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
+		Name:        serviceName,
+		User:        user,
+		Type:        serviceType,
+		Command:     command,
+		Args:        args,
+		AutoRestart: true,
+		MaxRestarts: 3,
+	}); err != nil {
+		return fmt.Errorf("failed to register service %s: %w", serviceName, err)
+	}
+
+	// Attach to existing process
+	if err := s.processManager.AttachProcess(serviceName, pid); err != nil {
+		return fmt.Errorf("failed to attach to service %s (PID: %d): %w", serviceName, pid, err)
+	}
+
+	log.Printf("✅ Attached to %s service (PID: %d)", serviceName, pid)
+	return nil
+}
+
+// isProcessRunning checks if a process with given PID is running
+func (s *Supervisor) isProcessRunning(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+
+	// Check if /proc/[pid] exists
+	_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
+	return err == nil
+}
+
+// startSystemService starts a systemd service
+func (s *Supervisor) startSystemService(serviceName string) error {
+	log.Printf("🚀 Starting system service: %s", serviceName)
+	cmd := exec.Command("systemctl", "start", serviceName)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start service %s: %w", serviceName, err)
+	}
+	log.Printf("✅ System service started: %s", serviceName)
+	return nil
+}
+
+// stopSystemService stops a systemd service
+func (s *Supervisor) stopSystemService(serviceName string) error {
+	log.Printf("🛑 Stopping system service: %s", serviceName)
+	cmd := exec.Command("systemctl", "stop", serviceName)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to stop service %s: %w", serviceName, err)
+	}
+	log.Printf("✅ System service stopped: %s", serviceName)
+	return nil
+}
+
+// getServiceStatus gets the status of a systemd service
+func (s *Supervisor) getServiceStatus(serviceName string) string {
+	cmd := exec.Command("systemctl", "is-active", serviceName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// getProcessMemoryUsage gets actual memory usage for a process by PID
+func (s *Supervisor) getProcessMemoryUsage(pid int) int64 {
+	if pid <= 0 {
+		return 0
+	}
+
+	// Read /proc/[pid]/status for memory information
+	statusFile := fmt.Sprintf("/proc/%d/status", pid)
+	data, err := os.ReadFile(statusFile)
+	if err != nil {
+		return 0
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "VmRSS:") {
+			// VmRSS is the physical memory currently used by the process
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				if value, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+					// Convert from KB to bytes
+					return value * 1024
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// getProcessCPUUsage gets CPU usage for a process by PID
+func (s *Supervisor) getProcessCPUUsage(pid int) float64 {
+	if pid <= 0 {
+		return 0.0
+	}
+
+	// Read /proc/[pid]/stat for CPU information
+	statFile := fmt.Sprintf("/proc/%d/stat", pid)
+	data, err := os.ReadFile(statFile)
+	if err != nil {
+		return 0.0
+	}
+
+	fields := strings.Fields(string(data))
+	if len(fields) < 17 {
+		return 0.0
+	}
+
+	// fields[13] = utime (user time)
+	// fields[14] = stime (system time)
+	utime, err1 := strconv.ParseInt(fields[13], 10, 64)
+	stime, err2 := strconv.ParseInt(fields[14], 10, 64)
+	
+	if err1 != nil || err2 != nil {
+		return 0.0
+	}
+
+	totalTime := utime + stime
+	
+	// Get system clock ticks per second
+	clockTicks := int64(100) // Usually 100 on Linux
+	
+	// Simple CPU usage calculation (this is a basic implementation)
+	// In production, you'd want to calculate this over time intervals
+	return float64(totalTime) / float64(clockTicks)
+}
+
+// updateProcessStats updates process statistics with real data
+func (s *Supervisor) updateProcessStats() {
+	processes := s.processManager.GetProcessList()
+	for i := range processes {
+		proc := &processes[i]
+		
+		// Update memory usage
+		if proc.PID > 0 {
+			proc.Memory = s.getProcessMemoryUsage(proc.PID)
+			proc.CPU = s.getProcessCPUUsage(proc.PID)
+		}
+		
+		// For system services, get status from systemctl
+		if proc.Type == "service" {
+			status := s.getServiceStatus(proc.Name)
+			switch status {
+			case "active":
+				proc.Status = "running"
+			case "inactive":
+				proc.Status = "stopped"
+			case "failed":
+				proc.Status = "error"
+			default:
+				proc.Status = "unknown"
+			}
+			
+			// Try to get PID for system services
+			if proc.Status == "running" && proc.PID == 0 {
+				pid := s.getServicePID(proc.Name)
+				if pid > 0 {
+					proc.PID = pid
+					proc.Memory = s.getProcessMemoryUsage(pid)
+					proc.CPU = s.getProcessCPUUsage(pid)
+				}
+			}
+		}
+	}
+}
+
+// getServicePID gets the main PID of a systemd service
+func (s *Supervisor) getServicePID(serviceName string) int {
+	cmd := exec.Command("systemctl", "show", "--property=MainPID", "--value", serviceName)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	
+	pidStr := strings.TrimSpace(string(output))
+	if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+		return pid
+	}
+	return 0
 }
 
 // waitForServices waits for external services to be ready
@@ -424,6 +628,14 @@ func (s *Supervisor) setupIPCHandlers() {
 	// System health handlers
 	s.ipcServer.RegisterHandler(ipc.MessageTypeSystemHealth, s.handleGetSystemHealth)
 	s.ipcServer.RegisterHandler(ipc.MessageTypeSystemStats, s.handleGetSystemResources)
+
+	// Configuration handlers
+	s.ipcServer.RegisterHandler(ipc.MessageTypeConfigGet, s.handleConfigGet)
+	s.ipcServer.RegisterHandler(ipc.MessageTypeConfigSet, s.handleConfigSet)
+	s.ipcServer.RegisterHandler(ipc.MessageTypeConfigList, s.handleConfigList)
+	s.ipcServer.RegisterHandler(ipc.MessageTypeConfigReset, s.handleConfigReset)
+	s.ipcServer.RegisterHandler(ipc.MessageTypeConfigImport, s.handleConfigImport)
+	s.ipcServer.RegisterHandler(ipc.MessageTypeConfigValidate, s.handleConfigValidate)
 }
 
 // handleEnableLogs handles log enable requests
@@ -705,22 +917,158 @@ func (s *Supervisor) handleGetSystemHealth(conn *ipc.Connection, msg *ipc.Messag
 
 // handleGetSystemResources handles get system resources requests
 func (s *Supervisor) handleGetSystemResources(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
+	// 프로세스 통계 업데이트
+	s.updateProcessStats()
+	
+	// 실제 프로세스 통계 수집
+	processes := s.processManager.GetProcessList()
+	runningCount := 0
+	stoppedCount := 0
+	errorCount := 0
 
-	resources := &ipc.SystemResources{
-		CPUUsage:    0.0, // TODO: implement CPU usage calculation
-		MemoryUsage: float64(m.Alloc) / float64(m.Sys) * 100,
-		DiskUsage:   0.0, // TODO: implement disk usage calculation
-		NetworkIO:   0,
-		DiskIO:      0,
+	for _, proc := range processes {
+		switch proc.Status {
+		case "running":
+			runningCount++
+		case "stopped":
+			stoppedCount++
+		case "error":
+			errorCount++
+		}
 	}
 
-	return &ipc.Response{
-		ID:      msg.ID,
-		Success: true,
-		Data:    resources,
+	// 시스템 리소스 계산
+	cpuUsage := s.getCPUUsage()
+	memoryUsage := s.getMemoryUsage()
+	diskUsage := s.getDiskUsage()
+
+	stats := map[string]interface{}{
+		"processes":       len(processes),
+		"running":         runningCount,
+		"stopped":         stoppedCount,
+		"errors":          errorCount,
+		"ipc_connections": s.ipcServer.GetConnectionCount(),
+		"cpu_usage":       cpuUsage,
+		"memory_usage":    memoryUsage,
+		"disk_usage":      diskUsage,
 	}
+
+	return ipc.NewResponse(msg.ID, true, stats, "")
+}
+
+// getCPUUsage 시스템 CPU 사용률 계산
+func (s *Supervisor) getCPUUsage() float64 {
+	// /proc/stat에서 CPU 사용률 계산
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		log.Printf("⚠️ Failed to read /proc/stat: %v", err)
+		return 0.0
+	}
+
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 {
+		return 0.0
+	}
+
+	// 첫 번째 줄은 전체 CPU 통계
+	cpuLine := lines[0]
+	if !strings.HasPrefix(cpuLine, "cpu ") {
+		return 0.0
+	}
+
+	fields := strings.Fields(cpuLine)
+	if len(fields) < 8 {
+		return 0.0
+	}
+
+	// CPU 시간 값들 파싱
+	var times []int64
+	for i := 1; i < 8; i++ {
+		val, err := strconv.ParseInt(fields[i], 10, 64)
+		if err != nil {
+			return 0.0
+		}
+		times = append(times, val)
+	}
+
+	// user, nice, system, idle, iowait, irq, softirq
+	idle := times[3] + times[4] // idle + iowait
+	total := int64(0)
+	for _, t := range times {
+		total += t
+	}
+
+	if total == 0 {
+		return 0.0
+	}
+
+	// CPU 사용률 = (total - idle) / total * 100
+	usage := float64(total-idle) / float64(total) * 100
+	return usage
+}
+
+// getMemoryUsage 시스템 메모리 사용률 계산
+func (s *Supervisor) getMemoryUsage() float64 {
+	// /proc/meminfo에서 메모리 정보 읽기
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		log.Printf("⚠️ Failed to read /proc/meminfo: %v", err)
+		return 0.0
+	}
+
+	lines := strings.Split(string(data), "\n")
+	memInfo := make(map[string]int64)
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		key := strings.TrimSuffix(parts[0], ":")
+		value, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		memInfo[key] = value
+	}
+
+	memTotal, ok1 := memInfo["MemTotal"]
+	memAvailable, ok2 := memInfo["MemAvailable"]
+	
+	if !ok1 || !ok2 || memTotal == 0 {
+		return 0.0
+	}
+
+	// 메모리 사용률 = (Total - Available) / Total * 100
+	usage := float64(memTotal-memAvailable) / float64(memTotal) * 100
+	return usage
+}
+
+// getDiskUsage 디스크 사용률 계산
+func (s *Supervisor) getDiskUsage() float64 {
+	// 현재 작업 디렉토리의 디스크 사용률 계산
+	var stat syscall.Statfs_t
+	err := syscall.Statfs(".", &stat)
+	if err != nil {
+		log.Printf("⚠️ Failed to get disk stats: %v", err)
+		return 0.0
+	}
+
+	// 총 블록 수와 사용 가능한 블록 수
+	total := stat.Blocks * uint64(stat.Bsize)
+	available := stat.Bavail * uint64(stat.Bsize)
+
+	if total == 0 {
+		return 0.0
+	}
+
+	// 디스크 사용률 = (Total - Available) / Total * 100
+	usage := float64(total-available) / float64(total) * 100
+	return usage
 }
 
 // GetLogManager returns the log manager instance
@@ -817,4 +1165,327 @@ func (s *Supervisor) initializePostgreSQLData() error {
 
 	log.Println("PostgreSQL data directory initialized successfully")
 	return nil
+}
+
+// Configuration handlers
+func (s *Supervisor) handleConfigGet(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
+	key, hasKey := msg.Data["key"].(string)
+	
+	if !hasKey || key == "" {
+		// 전체 설정 반환
+		configData := map[string]interface{}{
+			"socket_path":      s.config.SocketPath,
+			"postgresql_path":  s.config.PostgreSQLPath,
+			"nats_path":        s.config.NATSPath,
+			"seaweedfs_path":   s.config.SeaweedFSPath,
+			"postgresql_port":  s.config.PostgreSQLPort,
+			"nats_port":        s.config.NATSPort,
+			"seaweedfs_port":   s.config.SeaweedFSPort,
+			"startup_timeout":  s.config.StartupTimeout.String(),
+			"shutdown_timeout": s.config.ShutdownTimeout.String(),
+			"log_dir":          s.config.LogDir,
+			"log_level":        s.config.LogLevel,
+		}
+		return ipc.NewResponse(msg.ID, true, configData, "")
+	}
+
+	// 특정 키 값 반환
+	var value interface{}
+	switch key {
+	case "socket_path":
+		value = s.config.SocketPath
+	case "postgresql_path":
+		value = s.config.PostgreSQLPath
+	case "nats_path":
+		value = s.config.NATSPath
+	case "seaweedfs_path":
+		value = s.config.SeaweedFSPath
+	case "postgresql_port":
+		value = s.config.PostgreSQLPort
+	case "nats_port":
+		value = s.config.NATSPort
+	case "seaweedfs_port":
+		value = s.config.SeaweedFSPort
+	case "startup_timeout":
+		value = s.config.StartupTimeout.String()
+	case "shutdown_timeout":
+		value = s.config.ShutdownTimeout.String()
+	case "log_dir":
+		value = s.config.LogDir
+	case "log_level":
+		value = s.config.LogLevel
+	default:
+		return ipc.NewResponse(msg.ID, false, nil, fmt.Sprintf("unknown config key: %s", key))
+	}
+
+	return ipc.NewResponse(msg.ID, true, map[string]interface{}{key: value}, "")
+}
+
+func (s *Supervisor) handleConfigSet(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
+	key, ok := msg.Data["key"].(string)
+	if !ok {
+		return ipc.NewResponse(msg.ID, false, nil, "key parameter required")
+	}
+
+	value := msg.Data["value"]
+	if value == nil {
+		return ipc.NewResponse(msg.ID, false, nil, "value parameter required")
+	}
+
+	// 설정 값 업데이트
+	needsRestart := false
+	component := ""
+
+	switch key {
+	case "log_level":
+		if strVal, ok := value.(string); ok {
+			s.config.LogLevel = strVal
+			component = "logging"
+		} else {
+			return ipc.NewResponse(msg.ID, false, nil, "log_level must be a string")
+		}
+	case "log_dir":
+		if strVal, ok := value.(string); ok {
+			s.config.LogDir = strVal
+			needsRestart = true
+			component = "logging"
+		} else {
+			return ipc.NewResponse(msg.ID, false, nil, "log_dir must be a string")
+		}
+	case "postgresql_port":
+		if intVal, ok := value.(float64); ok {
+			s.config.PostgreSQLPort = int(intVal)
+			needsRestart = true
+			component = "postgresql"
+		} else {
+			return ipc.NewResponse(msg.ID, false, nil, "postgresql_port must be a number")
+		}
+	case "nats_port":
+		if intVal, ok := value.(float64); ok {
+			s.config.NATSPort = int(intVal)
+			needsRestart = true
+			component = "nats"
+		} else {
+			return ipc.NewResponse(msg.ID, false, nil, "nats_port must be a number")
+		}
+	case "seaweedfs_port":
+		if intVal, ok := value.(float64); ok {
+			s.config.SeaweedFSPort = int(intVal)
+			needsRestart = true
+			component = "seaweedfs"
+		} else {
+			return ipc.NewResponse(msg.ID, false, nil, "seaweedfs_port must be a number")
+		}
+	default:
+		return ipc.NewResponse(msg.ID, false, nil, fmt.Sprintf("config key '%s' is not modifiable", key))
+	}
+
+	responseData := map[string]interface{}{
+		"needs_restart": needsRestart,
+		"component":     component,
+	}
+
+	return ipc.NewResponse(msg.ID, true, responseData, "")
+}
+
+func (s *Supervisor) handleConfigList(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
+	configs := []map[string]interface{}{
+		{
+			"key":         "socket_path",
+			"value":       s.config.SocketPath,
+			"type":        "string",
+			"description": "IPC socket path for supervisor communication",
+		},
+		{
+			"key":         "postgresql_path",
+			"value":       s.config.PostgreSQLPath,
+			"type":        "string",
+			"description": "Path to PostgreSQL binary",
+		},
+		{
+			"key":         "nats_path",
+			"value":       s.config.NATSPath,
+			"type":        "string",
+			"description": "Path to NATS server binary",
+		},
+		{
+			"key":         "seaweedfs_path",
+			"value":       s.config.SeaweedFSPath,
+			"type":        "string",
+			"description": "Path to SeaweedFS binary",
+		},
+		{
+			"key":         "postgresql_port",
+			"value":       s.config.PostgreSQLPort,
+			"type":        "int",
+			"description": "PostgreSQL server port",
+		},
+		{
+			"key":         "nats_port",
+			"value":       s.config.NATSPort,
+			"type":        "int",
+			"description": "NATS server port",
+		},
+		{
+			"key":         "seaweedfs_port",
+			"value":       s.config.SeaweedFSPort,
+			"type":        "int",
+			"description": "SeaweedFS master port",
+		},
+		{
+			"key":         "startup_timeout",
+			"value":       s.config.StartupTimeout.String(),
+			"type":        "duration",
+			"description": "Timeout for service startup",
+		},
+		{
+			"key":         "shutdown_timeout",
+			"value":       s.config.ShutdownTimeout.String(),
+			"type":        "duration",
+			"description": "Timeout for service shutdown",
+		},
+		{
+			"key":         "log_dir",
+			"value":       s.config.LogDir,
+			"type":        "string",
+			"description": "Directory for log files",
+		},
+		{
+			"key":         "log_level",
+			"value":       s.config.LogLevel,
+			"type":        "string",
+			"description": "Log level (DEBUG, INFO, WARN, ERROR)",
+		},
+	}
+
+	return ipc.NewResponse(msg.ID, true, configs, "")
+}
+
+func (s *Supervisor) handleConfigReset(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
+	key, hasKey := msg.Data["key"].(string)
+	all, _ := msg.Data["all"].(bool)
+
+	if all {
+		// 모든 설정을 기본값으로 리셋
+		defaultConfig := DefaultConfig()
+		s.config = defaultConfig
+		return ipc.NewResponse(msg.ID, true, map[string]string{"status": "all config reset to defaults"}, "")
+	}
+
+	if !hasKey || key == "" {
+		return ipc.NewResponse(msg.ID, false, nil, "key parameter required when not using --all")
+	}
+
+	// 특정 키를 기본값으로 리셋
+	defaultConfig := DefaultConfig()
+	switch key {
+	case "log_level":
+		s.config.LogLevel = defaultConfig.LogLevel
+	case "log_dir":
+		s.config.LogDir = defaultConfig.LogDir
+	case "postgresql_port":
+		s.config.PostgreSQLPort = defaultConfig.PostgreSQLPort
+	case "nats_port":
+		s.config.NATSPort = defaultConfig.NATSPort
+	case "seaweedfs_port":
+		s.config.SeaweedFSPort = defaultConfig.SeaweedFSPort
+	case "startup_timeout":
+		s.config.StartupTimeout = defaultConfig.StartupTimeout
+	case "shutdown_timeout":
+		s.config.ShutdownTimeout = defaultConfig.ShutdownTimeout
+	default:
+		return ipc.NewResponse(msg.ID, false, nil, fmt.Sprintf("unknown config key: %s", key))
+	}
+
+	return ipc.NewResponse(msg.ID, true, map[string]string{"status": fmt.Sprintf("config key '%s' reset to default", key)}, "")
+}
+
+func (s *Supervisor) handleConfigImport(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
+	configData, ok := msg.Data["config"].(map[string]interface{})
+	if !ok {
+		return ipc.NewResponse(msg.ID, false, nil, "config data required")
+	}
+
+	changes := []string{}
+
+	// 설정 값들을 하나씩 적용
+	for key, value := range configData {
+		switch key {
+		case "log_level":
+			if strVal, ok := value.(string); ok {
+				s.config.LogLevel = strVal
+				changes = append(changes, fmt.Sprintf("log_level: %s", strVal))
+			}
+		case "log_dir":
+			if strVal, ok := value.(string); ok {
+				s.config.LogDir = strVal
+				changes = append(changes, fmt.Sprintf("log_dir: %s", strVal))
+			}
+		case "postgresql_port":
+			if intVal, ok := value.(float64); ok {
+				s.config.PostgreSQLPort = int(intVal)
+				changes = append(changes, fmt.Sprintf("postgresql_port: %d", int(intVal)))
+			}
+		case "nats_port":
+			if intVal, ok := value.(float64); ok {
+				s.config.NATSPort = int(intVal)
+				changes = append(changes, fmt.Sprintf("nats_port: %d", int(intVal)))
+			}
+		case "seaweedfs_port":
+			if intVal, ok := value.(float64); ok {
+				s.config.SeaweedFSPort = int(intVal)
+				changes = append(changes, fmt.Sprintf("seaweedfs_port: %d", int(intVal)))
+			}
+		}
+	}
+
+	responseData := map[string]interface{}{
+		"changes": changes,
+	}
+
+	return ipc.NewResponse(msg.ID, true, responseData, "")
+}
+
+func (s *Supervisor) handleConfigValidate(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
+	warnings := []string{}
+
+	// 포트 충돌 검사
+	ports := map[string]int{
+		"postgresql": s.config.PostgreSQLPort,
+		"nats":       s.config.NATSPort,
+		"seaweedfs":  s.config.SeaweedFSPort,
+	}
+
+	portMap := make(map[int]string)
+	for service, port := range ports {
+		if existingService, exists := portMap[port]; exists {
+			warnings = append(warnings, fmt.Sprintf("Port conflict: %s and %s both use port %d", service, existingService, port))
+		} else {
+			portMap[port] = service
+		}
+	}
+
+	// 로그 레벨 검사
+	validLevels := []string{"DEBUG", "INFO", "WARN", "ERROR"}
+	validLevel := false
+	for _, level := range validLevels {
+		if s.config.LogLevel == level {
+			validLevel = true
+			break
+		}
+	}
+	if !validLevel {
+		warnings = append(warnings, fmt.Sprintf("Invalid log level: %s (valid: %v)", s.config.LogLevel, validLevels))
+	}
+
+	// 디렉토리 존재 검사
+	if _, err := os.Stat(s.config.LogDir); os.IsNotExist(err) {
+		warnings = append(warnings, fmt.Sprintf("Log directory does not exist: %s", s.config.LogDir))
+	}
+
+	responseData := map[string]interface{}{
+		"warnings": warnings,
+	}
+
+	return ipc.NewResponse(msg.ID, true, responseData, "")
 }

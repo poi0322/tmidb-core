@@ -51,6 +51,7 @@ var monitorSystemCmd = &cobra.Command{
 	Long:  "Display real-time system resource usage",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("📊 System Resource Monitor (Press Ctrl+C to stop)")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// 신호 처리
 		sigChan := make(chan os.Signal, 1)
@@ -58,6 +59,11 @@ var monitorSystemCmd = &cobra.Command{
 
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
+
+		// 초기 헤더 출력
+		fmt.Printf("%-20s %-15s %-15s %-15s %-15s %-15s\n", 
+			"TIME", "PROCESSES", "CPU", "MEMORY", "DISK", "IPC CONN")
+		fmt.Println("────────────────────────────────────────────────────────────────────────────────────────")
 
 		for {
 			select {
@@ -75,8 +81,28 @@ var monitorSystemCmd = &cobra.Command{
 
 				// 통계 출력
 				if stats, ok := resp.Data.(map[string]interface{}); ok {
-					fmt.Printf("\r\033[K📊 Processes: %v | Running: %v | Stopped: %v | Errors: %v | IPC Connections: %v",
-						stats["processes"], stats["running"], stats["stopped"], stats["errors"], stats["ipc_connections"])
+					currentTime := time.Now().Format("15:04:05")
+					
+					// 프로세스 정보
+					processes := getIntValue(stats, "processes")
+					running := getIntValue(stats, "running")
+					stopped := getIntValue(stats, "stopped")
+					errors := getIntValue(stats, "errors")
+					processInfo := fmt.Sprintf("%d (%d↑ %d↓ %d⚠)", processes, running, stopped, errors)
+					
+					// 리소스 정보
+					cpuUsage := getFloatValue(stats, "cpu_usage")
+					memoryUsage := getFloatValue(stats, "memory_usage")
+					diskUsage := getFloatValue(stats, "disk_usage")
+					ipcConn := getIntValue(stats, "ipc_connections")
+					
+					cpuInfo := fmt.Sprintf("%.1f%%", cpuUsage)
+					memInfo := fmt.Sprintf("%.1f%%", memoryUsage)
+					diskInfo := fmt.Sprintf("%.1f%%", diskUsage)
+					ipcInfo := fmt.Sprintf("%d", ipcConn)
+					
+					fmt.Printf("%-20s %-15s %-15s %-15s %-15s %-15s\n",
+						currentTime, processInfo, cpuInfo, memInfo, diskInfo, ipcInfo)
 				}
 			case <-sigChan:
 				fmt.Println("\n📊 System monitoring stopped")
@@ -91,8 +117,6 @@ var monitorServicesCmd = &cobra.Command{
 	Short: "Monitor service health",
 	Long:  "Display health status of all services",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("🏥 Service Health Monitor:")
-
 		resp, err := client.SendMessage(ipc.MessageTypeSystemHealth, nil)
 		if err != nil {
 			fmt.Printf("❌ Failed to get system health: %v\n", err)
@@ -112,6 +136,20 @@ var monitorServicesCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// 출력 포맷터 가져오기
+		formatter := getFormatter(cmd)
+		
+		// JSON/YAML 출력인 경우
+		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
+			if err := formatter.Print(health); err != nil {
+				fmt.Printf("❌ Failed to format output: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
+		// 기본 텍스트 출력
+		fmt.Println("🏥 Service Health Monitor:")
 		fmt.Printf("Overall Status: %s\n", health.Status)
 		fmt.Printf("Uptime: %s\n", formatDuration(health.Uptime))
 		fmt.Printf("Last Check: %s\n", health.LastCheck.Format("2006-01-02 15:04:05"))
@@ -139,14 +177,10 @@ var monitorHealthCmd = &cobra.Command{
 	Short: "Check overall system health",
 	Long:  "Perform a quick health check of all components",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("🏥 Performing health check...")
-
 		if err := client.Ping(); err != nil {
 			fmt.Printf("❌ Supervisor is not responding: %v\n", err)
 			os.Exit(1)
 		}
-
-		fmt.Println("✅ Supervisor is healthy")
 
 		// 프로세스 상태 확인
 		processes, err := client.GetProcessList()
@@ -164,6 +198,30 @@ var monitorHealthCmd = &cobra.Command{
 			}
 		}
 
+		healthSummary := map[string]interface{}{
+			"supervisor_status": "healthy",
+			"total_components":  total,
+			"healthy_components": healthy,
+			"unhealthy_components": total - healthy,
+			"health_percentage": float64(healthy) / float64(total) * 100,
+			"components": processes,
+		}
+
+		// 출력 포맷터 가져오기
+		formatter := getFormatter(cmd)
+		
+		// JSON/YAML 출력인 경우
+		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
+			if err := formatter.Print(healthSummary); err != nil {
+				fmt.Printf("❌ Failed to format output: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
+		// 기본 텍스트 출력
+		fmt.Println("🏥 Performing health check...")
+		fmt.Println("✅ Supervisor is healthy")
 		fmt.Printf("📊 System Health: %d/%d components running\n", healthy, total)
 
 		if healthy == total {
@@ -180,8 +238,6 @@ var statusCmd = &cobra.Command{
 	Short: "Show status of all tmiDB components",
 	Long:  "Display status, uptime, and resource usage for all tmiDB components",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("📊 tmiDB-Core Component Status:")
-
 		processes, err := client.GetProcessList()
 		if err != nil {
 			fmt.Printf("❌ Failed to get process list: %v\n", err)
@@ -197,7 +253,41 @@ var statusCmd = &cobra.Command{
 			processMap[processes[i].Name] = &processes[i]
 		}
 
-		// 각 컴포넌트 상태 표시
+		// 출력 포맷터 가져오기
+		formatter := getFormatter(cmd)
+		
+		// JSON/YAML 출력인 경우 구조화된 데이터 출력
+		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
+			statusData := make(map[string]interface{})
+			for _, component := range components {
+				if process, exists := processMap[component]; exists {
+					statusData[component] = map[string]interface{}{
+						"status":     process.Status,
+						"pid":        process.PID,
+						"uptime":     process.Uptime.String(),
+						"memory":     process.Memory,
+						"cpu":        process.CPU,
+						"start_time": process.StartTime,
+					}
+				} else {
+					statusData[component] = map[string]interface{}{
+						"status": "not found",
+						"pid":    0,
+						"uptime": "0s",
+						"memory": 0,
+						"cpu":    0.0,
+					}
+				}
+			}
+			if err := formatter.Print(statusData); err != nil {
+				fmt.Printf("❌ Failed to format output: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
+		// 기본 텍스트 출력
+		fmt.Println("📊 tmiDB-Core Component Status:")
 		for _, component := range components {
 			fmt.Printf("🔍 %s:\n", component)
 
@@ -217,6 +307,142 @@ var statusCmd = &cobra.Command{
 				fmt.Printf("  CPU: -\n")
 			}
 			fmt.Println()
+		}
+	},
+}
+
+// Service 권한 관리 명령어
+var serviceCmd = &cobra.Command{
+	Use:   "service",
+	Short: "Manage service permissions and control",
+	Long:  "Control service start/stop/restart permissions and log access",
+}
+
+var serviceListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all services and their permissions",
+	Long:  "Display all services with their current status and permission settings",
+	Run: func(cmd *cobra.Command, args []string) {
+		processes, err := client.GetProcessList()
+		if err != nil {
+			fmt.Printf("❌ Failed to get process list: %v\n", err)
+			os.Exit(1)
+		}
+
+		// 출력 포맷터 가져오기
+		formatter := getFormatter(cmd)
+		
+		// JSON/YAML 출력인 경우
+		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
+			serviceData := make(map[string]interface{})
+			for _, proc := range processes {
+				serviceData[proc.Name] = map[string]interface{}{
+					"status":       proc.Status,
+					"pid":          proc.PID,
+					"type":         getServiceType(proc.Name),
+					"permissions": map[string]bool{
+						"start":   true,
+						"stop":    true,
+						"restart": true,
+						"logs":    true,
+					},
+					"uptime":     proc.Uptime.String(),
+					"memory":     proc.Memory,
+					"cpu":        proc.CPU,
+					"start_time": proc.StartTime,
+				}
+			}
+			if err := formatter.Print(serviceData); err != nil {
+				fmt.Printf("❌ Failed to format output: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
+		// 기본 텍스트 출력
+		fmt.Println("🔐 Service Permissions and Status:")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Printf("%-15s %-10s %-8s %-10s %-12s %-10s %-10s\n", 
+			"SERVICE", "STATUS", "PID", "TYPE", "PERMISSIONS", "UPTIME", "MEMORY")
+		fmt.Println("────────────────────────────────────────────────────────────────────────────────────────")
+
+		for _, proc := range processes {
+			statusIcon := getStatusIcon(proc.Status)
+			serviceType := getServiceType(proc.Name)
+			permissions := "START|STOP|RESTART|LOGS"
+			uptime := formatDuration(proc.Uptime)
+			memory := formatBytes(proc.Memory)
+
+			fmt.Printf("%-15s %s%-8s %-8d %-10s %-12s %-10s %-10s\n",
+				proc.Name, statusIcon, proc.Status, proc.PID, serviceType, permissions, uptime, memory)
+		}
+	},
+}
+
+var serviceControlCmd = &cobra.Command{
+	Use:   "control [start|stop|restart] [service-name]",
+	Short: "Control service lifecycle",
+	Long:  "Start, stop, or restart a specific service",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		action := args[0]
+		serviceName := args[1]
+
+		switch action {
+		case "start":
+			err := startService(serviceName)
+			if err != nil {
+				fmt.Printf("❌ Failed to start service %s: %v\n", serviceName, err)
+				os.Exit(1)
+			}
+			fmt.Printf("✅ Service %s started successfully\n", serviceName)
+
+		case "stop":
+			err := stopService(serviceName)
+			if err != nil {
+				fmt.Printf("❌ Failed to stop service %s: %v\n", serviceName, err)
+				os.Exit(1)
+			}
+			fmt.Printf("✅ Service %s stopped successfully\n", serviceName)
+
+		case "restart":
+			err := restartService(serviceName)
+			if err != nil {
+				fmt.Printf("❌ Failed to restart service %s: %v\n", serviceName, err)
+				os.Exit(1)
+			}
+			fmt.Printf("✅ Service %s restarted successfully\n", serviceName)
+
+		default:
+			fmt.Printf("❌ Invalid action: %s. Use start, stop, or restart\n", action)
+			os.Exit(1)
+		}
+	},
+}
+
+var serviceLogsCmd = &cobra.Command{
+	Use:   "logs [service-name]",
+	Short: "View service logs",
+	Long:  "Display logs for a specific service",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		serviceName := args[0]
+		lines, _ := cmd.Flags().GetInt("lines")
+		follow, _ := cmd.Flags().GetBool("follow")
+
+		if follow {
+			fmt.Printf("📜 Following logs for %s (Press Ctrl+C to stop):\n", serviceName)
+			// 실시간 로그 스트리밍 구현
+			if err := streamServiceLogs(serviceName); err != nil {
+				fmt.Printf("❌ Failed to stream logs: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			fmt.Printf("📜 Recent logs for %s:\n", serviceName)
+			if err := getServiceLogs(serviceName, lines); err != nil {
+				fmt.Printf("❌ Failed to get logs: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	},
 }
@@ -263,7 +489,158 @@ func formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f%s", float64(bytes)/float64(div), units[exp])
 }
 
+// 헬퍼 함수들
+func getIntValue(data map[string]interface{}, key string) int {
+	if val, ok := data[key]; ok {
+		if intVal, ok := val.(float64); ok {
+			return int(intVal)
+		}
+		if intVal, ok := val.(int); ok {
+			return intVal
+		}
+	}
+	return 0
+}
+
+func getFloatValue(data map[string]interface{}, key string) float64 {
+	if val, ok := data[key]; ok {
+		if floatVal, ok := val.(float64); ok {
+			return floatVal
+		}
+		if intVal, ok := val.(int); ok {
+			return float64(intVal)
+		}
+	}
+	return 0.0
+}
+
+func getServiceType(serviceName string) string {
+	switch serviceName {
+	case "postgresql", "nats", "seaweedfs":
+		return "external"
+	case "api", "data-manager", "data-consumer":
+		return "internal"
+	default:
+		return "unknown"
+	}
+}
+
+func getStatusIcon(status string) string {
+	switch status {
+	case "running":
+		return "🟢 "
+	case "stopped":
+		return "🔴 "
+	case "error":
+		return "🟡 "
+	default:
+		return "⚪ "
+	}
+}
+
+func startService(serviceName string) error {
+	data := map[string]interface{}{"name": serviceName}
+	resp, err := client.SendMessage(ipc.MessageTypeProcessStart, data)
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf(resp.Error)
+	}
+	return nil
+}
+
+func stopService(serviceName string) error {
+	data := map[string]interface{}{"name": serviceName}
+	resp, err := client.SendMessage(ipc.MessageTypeProcessStop, data)
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf(resp.Error)
+	}
+	return nil
+}
+
+func restartService(serviceName string) error {
+	data := map[string]interface{}{"name": serviceName}
+	resp, err := client.SendMessage(ipc.MessageTypeProcessRestart, data)
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf(resp.Error)
+	}
+	return nil
+}
+
+func getServiceLogs(serviceName string, lines int) error {
+	data := map[string]interface{}{
+		"component": serviceName,
+		"lines":     lines,
+	}
+	resp, err := client.SendMessage(ipc.MessageTypeGetLogs, data)
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf(resp.Error)
+	}
+
+	// 로그 출력
+	if logs, ok := resp.Data.([]interface{}); ok {
+		for _, logEntry := range logs {
+			if logMap, ok := logEntry.(map[string]interface{}); ok {
+				timestamp := logMap["timestamp"]
+				message := logMap["message"]
+				fmt.Printf("[%v] %v\n", timestamp, message)
+			}
+		}
+	}
+	return nil
+}
+
+func streamServiceLogs(serviceName string) error {
+	// 실시간 로그 스트리밍 구현
+	data := map[string]interface{}{
+		"component": serviceName,
+		"action":    "start",
+	}
+	resp, err := client.SendMessage(ipc.MessageTypeLogStream, data)
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf(resp.Error)
+	}
+
+	// 실제 스트리밍은 IPC 연결을 통해 구현해야 함
+	fmt.Println("Log streaming started (simplified implementation)")
+	return nil
+}
+
 func init() {
+	// 모든 명령어에 output 플래그 추가
+	addOutputFlag := func(cmd *cobra.Command) {
+		cmd.Flags().StringP("output", "o", "default", "Output format (default, json, json-pretty, yaml)")
+	}
+
+	// 모니터링 명령어에 플래그 추가
+	addOutputFlag(monitorSystemCmd)
+	addOutputFlag(monitorServicesCmd)
+	addOutputFlag(monitorHealthCmd)
+	addOutputFlag(statusCmd)
+	addOutputFlag(serviceListCmd)
+
+	// Service logs 명령어에 플래그 추가
+	serviceLogsCmd.Flags().IntP("lines", "n", 50, "Number of lines to show")
+	serviceLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+
+	// Service 명령어 구성
+	serviceCmd.AddCommand(serviceListCmd)
+	serviceCmd.AddCommand(serviceControlCmd)
+	serviceCmd.AddCommand(serviceLogsCmd)
+
 	// 모니터링 명령어 구성
 	monitorCmd.AddCommand(monitorSystemCmd)
 	monitorCmd.AddCommand(monitorServicesCmd)
@@ -272,6 +649,7 @@ func init() {
 	// 루트 명령어에 추가
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(monitorCmd)
+	rootCmd.AddCommand(serviceCmd)
 }
 
 func main() {
