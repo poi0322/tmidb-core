@@ -17,8 +17,8 @@ import (
 const (
 	DefaultSocketPath = "/tmp/tmidb-supervisor.sock"
 	MaxConnections    = 100
-	ReadTimeout       = 30 * time.Second
-	WriteTimeout      = 10 * time.Second
+	ReadTimeout       = 1 * time.Second
+	WriteTimeout      = 5 * time.Second
 )
 
 // Server IPC 서버 구조체
@@ -235,7 +235,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		line, err := conn.Reader.ReadString('\n')
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				continue // 타임아웃은 정상적인 상황
+				return // 타임아웃 시 연결 종료 (CLI는 한 번의 요청-응답만 필요)
 			}
 			return // 연결 종료
 		}
@@ -252,6 +252,11 @@ func (s *Server) handleConnection(netConn net.Conn) {
 
 		// 메시지 처리
 		s.handleMessage(conn, &msg)
+
+		// 로그 스트림이 아닌 일반 명령어의 경우 응답 후 연결 종료
+		if msg.Type != MessageTypeLogStream {
+			return
+		}
 	}
 }
 

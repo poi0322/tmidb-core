@@ -54,6 +54,13 @@ const (
 	MessageTypeDiagnoseFix          MessageType = "diagnose_fix"
 	MessageTypeDiagnoseResult       MessageType = "diagnose_result"
 
+	// 복사 관련
+	MessageTypeCopyReceive MessageType = "copy_receive"
+	MessageTypeCopySend    MessageType = "copy_send"
+	MessageTypeCopyStatus  MessageType = "copy_status"
+	MessageTypeCopyList    MessageType = "copy_list"
+	MessageTypeCopyStop    MessageType = "copy_stop"
+
 	// 응답
 	MessageTypeResponse MessageType = "response"
 	MessageTypeError    MessageType = "error"
@@ -86,6 +93,7 @@ type LogEntry struct {
 // ProcessInfo 프로세스 정보 구조체
 type ProcessInfo struct {
 	Name      string            `json:"name"`
+	Type      string            `json:"type"`
 	Status    string            `json:"status"`
 	PID       int               `json:"pid"`
 	Uptime    time.Duration     `json:"uptime"`
@@ -128,6 +136,33 @@ type SystemResources struct {
 	DiskUsage   float64 `json:"disk_usage"`
 	NetworkIO   int64   `json:"network_io"`
 	DiskIO      int64   `json:"disk_io"`
+}
+
+// CopySession 복사 세션 정보
+type CopySession struct {
+	ID          string    `json:"id"`
+	Mode        string    `json:"mode"`        // "receive" or "send"
+	Status      string    `json:"status"`      // "listening", "connected", "transferring", "completed", "failed"
+	Port        int       `json:"port"`        // 수신 포트
+	Path        string    `json:"path"`        // 수신 경로 또는 전송 파일 경로
+	TargetHost  string    `json:"target_host"` // 전송 대상 호스트 (send 모드)
+	TargetPort  int       `json:"target_port"` // 전송 대상 포트 (send 모드)
+	FileSize    int64     `json:"file_size"`   // 파일 크기
+	Transferred int64     `json:"transferred"` // 전송된 바이트
+	Speed       float64   `json:"speed"`       // 전송 속도 (MB/s)
+	StartTime   time.Time `json:"start_time"`
+	EndTime     time.Time `json:"end_time,omitempty"`
+	Error       string    `json:"error,omitempty"`
+}
+
+// CopyProgress 복사 진행 상태
+type CopyProgress struct {
+	SessionID   string  `json:"session_id"`
+	Progress    float64 `json:"progress"`    // 0-100 퍼센트
+	Transferred int64   `json:"transferred"` // 전송된 바이트
+	Total       int64   `json:"total"`       // 총 바이트
+	Speed       float64 `json:"speed"`       // 현재 속도 (MB/s)
+	ETA         int64   `json:"eta"`         // 예상 완료 시간 (초)
 }
 
 // NewMessage 새로운 메시지 생성

@@ -107,41 +107,71 @@ func (c *Client) Close() error {
 
 // SendMessage 메시지 전송
 func (c *Client) SendMessage(msgType MessageType, data map[string]interface{}) (*Response, error) {
-	if !c.isConnected() {
-		if err := c.Connect(); err != nil {
-			return nil, err
-		}
+	// CLI 명령어의 경우 새로운 연결 생성
+	conn, err := net.Dial("unix", c.socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to supervisor: %w", err)
 	}
+	// defer를 제거하고 명시적으로 연결 종료
+
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
 
 	msg := NewMessage(msgType, data)
 
-	// 응답 채널 생성
-	respChan := make(chan *Response, 1)
-	c.responseMux.Lock()
-	c.responses[msg.ID] = respChan
-	c.responseMux.Unlock()
-
-	// 응답 채널 정리 함수
-	defer func() {
-		c.responseMux.Lock()
-		delete(c.responses, msg.ID)
-		c.responseMux.Unlock()
-		close(respChan)
-	}()
-
-	// 메시지 전송
-	if err := c.sendMessage(msg); err != nil {
-		return nil, err
+	// JSON 직렬화
+	msgData, err := msg.ToJSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	// 응답 대기 (타임아웃 포함)
+	// 쓰기 타임아웃 설정
+	conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+
+	// 메시지 전송
+	_, err = writer.Write(append(msgData, '\n'))
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message: %w", err)
+	}
+
+	if err := writer.Flush(); err != nil {
+		return nil, fmt.Errorf("failed to flush message: %w", err)
+	}
+
+	// 응답 읽기를 위한 채널과 고루틴 사용
+	responseChan := make(chan *Response, 1)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		// 고루틴 내부에서도 충분한 타임아웃 설정
+		conn.SetReadDeadline(time.Now().Add(25 * time.Second))
+
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			errorChan <- fmt.Errorf("failed to read response: %w", err)
+			return
+		}
+
+		var resp Response
+		if err := json.Unmarshal([]byte(line), &resp); err != nil {
+			errorChan <- fmt.Errorf("failed to parse response: %w", err)
+			return
+		}
+
+		responseChan <- &resp
+	}()
+
+	// 30초 타임아웃으로 응답 대기 (프로세스 재시작 등 긴 작업을 충분히 고려)
 	select {
-	case resp := <-respChan:
+	case resp := <-responseChan:
+		conn.Close() // 응답 받으면 즉시 연결 종료
 		return resp, nil
+	case err := <-errorChan:
+		conn.Close() // 오류 발생 시 즉시 연결 종료
+		return nil, err
 	case <-time.After(30 * time.Second):
-		return nil, fmt.Errorf("request timeout")
-	case <-c.ctx.Done():
-		return nil, fmt.Errorf("client closed")
+		conn.Close() // 타임아웃 시 즉시 연결 종료
+		return nil, fmt.Errorf("request timeout after 30 seconds")
 	}
 }
 
@@ -191,10 +221,14 @@ func (c *Client) StreamLogs(component string) (<-chan LogEntry, error) {
 
 // sendMessage 실제 메시지 전송
 func (c *Client) sendMessage(msg *Message) error {
+	// 뮤텍스 사용 최소화
 	c.connMux.RLock()
-	defer c.connMux.RUnlock()
+	connected := c.connected
+	conn := c.conn
+	writer := c.writer
+	c.connMux.RUnlock()
 
-	if !c.connected || c.conn == nil {
+	if !connected || conn == nil {
 		return fmt.Errorf("not connected")
 	}
 
@@ -205,16 +239,18 @@ func (c *Client) sendMessage(msg *Message) error {
 	}
 
 	// 쓰기 타임아웃 설정
-	c.conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+	conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
 
 	// 메시지 전송 (개행 문자 추가)
-	_, err = c.writer.Write(append(data, '\n'))
+	_, err = writer.Write(append(data, '\n'))
 	if err != nil {
+		c.connMux.Lock()
 		c.connected = false
+		c.connMux.Unlock()
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
-	return c.writer.Flush()
+	return writer.Flush()
 }
 
 // handleResponses 응답 처리

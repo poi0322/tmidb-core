@@ -21,21 +21,11 @@ var rootCmd = &cobra.Command{
 	Long: `tmiDB CLI is a command-line tool for managing and monitoring 
 tmiDB-Core components including logging, process control, and system monitoring.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// IPC 클라이언트 초기화
+		// IPC 클라이언트 초기화 (연결은 SendMessage에서 개별적으로 수행)
 		socketPath := os.Getenv("TMIDB_SOCKET_PATH")
 		client = ipc.NewClient(socketPath)
-		if err := client.Connect(); err != nil {
-			fmt.Printf("❌ Failed to connect to supervisor: %v\n", err)
-			fmt.Println("💡 Make sure tmidb-supervisor is running")
-			os.Exit(1)
-		}
 	},
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		// IPC 클라이언트 정리
-		if client != nil {
-			client.Close()
-		}
-	},
+	// PersistentPostRun 제거 (연결은 SendMessage에서 개별적으로 관리)
 }
 
 // 모니터링 관련 명령어들
@@ -61,7 +51,7 @@ var monitorSystemCmd = &cobra.Command{
 		defer ticker.Stop()
 
 		// 초기 헤더 출력
-		fmt.Printf("%-20s %-15s %-15s %-15s %-15s %-15s\n", 
+		fmt.Printf("%-20s %-15s %-15s %-15s %-15s %-15s\n",
 			"TIME", "PROCESSES", "CPU", "MEMORY", "DISK", "IPC CONN")
 		fmt.Println("────────────────────────────────────────────────────────────────────────────────────────")
 
@@ -82,25 +72,25 @@ var monitorSystemCmd = &cobra.Command{
 				// 통계 출력
 				if stats, ok := resp.Data.(map[string]interface{}); ok {
 					currentTime := time.Now().Format("15:04:05")
-					
+
 					// 프로세스 정보
 					processes := getIntValue(stats, "processes")
 					running := getIntValue(stats, "running")
 					stopped := getIntValue(stats, "stopped")
 					errors := getIntValue(stats, "errors")
 					processInfo := fmt.Sprintf("%d (%d↑ %d↓ %d⚠)", processes, running, stopped, errors)
-					
+
 					// 리소스 정보
 					cpuUsage := getFloatValue(stats, "cpu_usage")
 					memoryUsage := getFloatValue(stats, "memory_usage")
 					diskUsage := getFloatValue(stats, "disk_usage")
 					ipcConn := getIntValue(stats, "ipc_connections")
-					
+
 					cpuInfo := fmt.Sprintf("%.1f%%", cpuUsage)
 					memInfo := fmt.Sprintf("%.1f%%", memoryUsage)
 					diskInfo := fmt.Sprintf("%.1f%%", diskUsage)
 					ipcInfo := fmt.Sprintf("%d", ipcConn)
-					
+
 					fmt.Printf("%-20s %-15s %-15s %-15s %-15s %-15s\n",
 						currentTime, processInfo, cpuInfo, memInfo, diskInfo, ipcInfo)
 				}
@@ -138,7 +128,7 @@ var monitorServicesCmd = &cobra.Command{
 
 		// 출력 포맷터 가져오기
 		formatter := getFormatter(cmd)
-		
+
 		// JSON/YAML 출력인 경우
 		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
 			if err := formatter.Print(health); err != nil {
@@ -199,17 +189,17 @@ var monitorHealthCmd = &cobra.Command{
 		}
 
 		healthSummary := map[string]interface{}{
-			"supervisor_status": "healthy",
-			"total_components":  total,
-			"healthy_components": healthy,
+			"supervisor_status":    "healthy",
+			"total_components":     total,
+			"healthy_components":   healthy,
 			"unhealthy_components": total - healthy,
-			"health_percentage": float64(healthy) / float64(total) * 100,
-			"components": processes,
+			"health_percentage":    float64(healthy) / float64(total) * 100,
+			"components":           processes,
 		}
 
 		// 출력 포맷터 가져오기
 		formatter := getFormatter(cmd)
-		
+
 		// JSON/YAML 출력인 경우
 		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
 			if err := formatter.Print(healthSummary); err != nil {
@@ -255,7 +245,7 @@ var statusCmd = &cobra.Command{
 
 		// 출력 포맷터 가져오기
 		formatter := getFormatter(cmd)
-		
+
 		// JSON/YAML 출력인 경우 구조화된 데이터 출력
 		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
 			statusData := make(map[string]interface{})
@@ -331,15 +321,15 @@ var serviceListCmd = &cobra.Command{
 
 		// 출력 포맷터 가져오기
 		formatter := getFormatter(cmd)
-		
+
 		// JSON/YAML 출력인 경우
 		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
 			serviceData := make(map[string]interface{})
 			for _, proc := range processes {
 				serviceData[proc.Name] = map[string]interface{}{
-					"status":       proc.Status,
-					"pid":          proc.PID,
-					"type":         getServiceType(proc.Name),
+					"status": proc.Status,
+					"pid":    proc.PID,
+					"type":   getServiceType(proc.Name),
 					"permissions": map[string]bool{
 						"start":   true,
 						"stop":    true,
@@ -362,7 +352,7 @@ var serviceListCmd = &cobra.Command{
 		// 기본 텍스트 출력
 		fmt.Println("🔐 Service Permissions and Status:")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Printf("%-15s %-10s %-8s %-10s %-12s %-10s %-10s\n", 
+		fmt.Printf("%-15s %-10s %-8s %-10s %-12s %-10s %-10s\n",
 			"SERVICE", "STATUS", "PID", "TYPE", "PERMISSIONS", "UPTIME", "MEMORY")
 		fmt.Println("────────────────────────────────────────────────────────────────────────────────────────")
 
@@ -650,6 +640,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(monitorCmd)
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(copyCmd)
 }
 
 func main() {

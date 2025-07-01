@@ -97,49 +97,21 @@ RUN go mod download
 # Set path for any Go binaries we might build inside
 ENV PATH="/app/bin:${GOPATH}/bin:${PATH}"
 
-# Copy remaining source code.
-# Binaries will be built by Air inside the container.
+# Copy application source
 COPY . .
 
-# Create entrypoint script that starts all services
-RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
-    echo 'set -e' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Initialize PostgreSQL if needed' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '/usr/local/bin/init-postgres.sh' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Start PostgreSQL in background' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "🚀 Starting PostgreSQL..."' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'su - postgres -c "postgres -D /data/postgresql -k /var/run/postgresql" &' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'POSTGRES_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "PostgreSQL started with PID $POSTGRES_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Start NATS in background' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "🚀 Starting NATS..."' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'su - natsuser -c "nats-server -sd /data/nats" &' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'NATS_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "NATS started with PID $NATS_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Start SeaweedFS in background' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "🚀 Starting SeaweedFS..."' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'su - seaweeduser -c "weed master -mdir=/data/seaweedfs/master" &' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'SEAWEED_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "SeaweedFS started with PID $SEAWEED_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Save PIDs for supervisor to attach' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "$POSTGRES_PID" > /var/run/postgresql.pid' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "$NATS_PID" > /var/run/nats.pid' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "$SEAWEED_PID" > /var/run/seaweedfs.pid' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Wait a moment for services to start' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'sleep 3' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'echo "✅ All services started successfully"' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Start the application' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'exec "$@"' >> /usr/local/bin/docker-entrypoint.sh && \
-    chmod +x /usr/local/bin/docker-entrypoint.sh
+# Build all necessary binaries
+RUN go build -o /app/bin/supervisor ./cmd/supervisor
+RUN go build -o /app/bin/tmidb-cli ./cmd/cli
+RUN go build -o /app/bin/api ./cmd/api
+RUN go build -o /app/bin/data-manager ./cmd/data-manager
+RUN go build -o /app/bin/data-consumer ./cmd/data-consumer
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# Copy and setup entrypoint
+COPY docker-entrypoint.dev.sh /usr/local/bin/docker-entrypoint.dev.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.dev.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.dev.sh"]
 
 # Default command can be overridden, but is useful for standalone runs.
 CMD ["air", "-c", ".air.toml"] 

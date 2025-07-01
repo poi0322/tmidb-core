@@ -102,8 +102,8 @@ WORKDIR /app
 
 # Go 애플리케이션 및 관련 파일 복사
 COPY --from=builder /app/bin /app/bin
-COPY views ./views
-# COPY public ./public
+COPY cmd/api/views ./views
+COPY cmd/api/static ./static
 
 # 바이너리를 시스템 PATH에 추가
 ENV PATH="/app/bin:${PATH}"
@@ -120,13 +120,13 @@ RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
     echo '' >> /usr/local/bin/docker-entrypoint.sh && \
     echo '# Start NATS in background' >> /usr/local/bin/docker-entrypoint.sh && \
     echo 'echo "🚀 Starting NATS..."' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'su - natsuser -c "nats-server -sd /data/nats" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'runuser -u natsuser -- nats-server -sd /data/nats &' >> /usr/local/bin/docker-entrypoint.sh && \
     echo 'NATS_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
     echo 'echo "NATS started with PID $NATS_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
     echo '' >> /usr/local/bin/docker-entrypoint.sh && \
     echo '# Start SeaweedFS in background' >> /usr/local/bin/docker-entrypoint.sh && \
     echo 'echo "🚀 Starting SeaweedFS..."' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'su - seaweeduser -c "weed master -mdir=/data/seaweedfs/master" &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'runuser -u seaweeduser -- weed master -mdir=/data/seaweedfs/master &' >> /usr/local/bin/docker-entrypoint.sh && \
     echo 'SEAWEED_PID=$!' >> /usr/local/bin/docker-entrypoint.sh && \
     echo 'echo "SeaweedFS started with PID $SEAWEED_PID"' >> /usr/local/bin/docker-entrypoint.sh && \
     echo '' >> /usr/local/bin/docker-entrypoint.sh && \

@@ -3,6 +3,7 @@ module github.com/tmidb/tmidb-core
 go 1.24.0
 
 require (
+	github.com/dop251/goja v0.0.0-20240220182346-e401ed450204
 	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/gofiber/template/html/v2 v2.1.3
 	github.com/joho/godotenv v1.5.1

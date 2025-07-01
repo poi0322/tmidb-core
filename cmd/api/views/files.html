@@ -1,0 +1,462 @@
+{{define "files"}}
+<div x-data="fileManager()" x-init="init()">
+    <!-- Header -->
+    <div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div class="flex items-center space-x-3">
+            <h1 class="text-2xl font-bold text-gray-900">파일 관리</h1>
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" 
+                  x-text="files.length + '개 파일'"></span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button type="button" @click="refreshFiles()" 
+                    class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 btn-hover transition-all">
+                <svg class="h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
+                </svg>
+                새로고침
+            </button>
+            <div class="relative">
+                <input type="text" x-model="searchQuery" @input="searchFiles()" 
+                       class="block w-72 pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                       placeholder="파일 검색...">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Area -->
+    <div class="mb-8">
+        <div 
+            @drop.prevent="handleDrop($event)"
+            @dragover.prevent=""
+            @dragenter.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            class="border-2 border-dashed rounded-lg p-8 text-center transition-colors"
+            :class="isDragging ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-gray-400'">
+            
+            <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            
+            <div class="text-center">
+                <p class="text-lg font-medium text-gray-900 mb-2">파일을 여기에 드래그하거나</p>
+                <button type="button" @click="$refs.fileInput.click()"
+                        class="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 btn-hover transition-all">
+                    <svg class="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                    </svg>
+                    파일 선택
+                </button>
+                <p class="text-sm text-gray-500 mt-2">최대 100MB, 모든 파일 형식 지원</p>
+            </div>
+            
+            <input type="file" x-ref="fileInput" @change="handleFileSelect($event)" 
+                   multiple class="hidden">
+        </div>
+        
+        <!-- Upload Progress -->
+        <div x-show="uploading" class="mt-4">
+            <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
+                <div class="flex items-center">
+                    <svg class="animate-spin h-5 w-5 text-blue-600 mr-3" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-blue-900">파일 업로드 중...</p>
+                        <div class="mt-2 bg-blue-200 rounded-full h-2">
+                            <div class="bg-blue-600 h-2 rounded-full transition-all" 
+                                 :style="`width: ${uploadProgress}%`"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Files List -->
+    <div class="bg-white shadow rounded-lg border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-lg font-medium text-gray-900">업로드된 파일</h3>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2 text-sm text-gray-500">
+                    <span>정렬:</span>
+                    <select x-model="sortBy" @change="sortFiles()" 
+                            class="border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="name">이름</option>
+                        <option value="size">크기</option>
+                        <option value="date">날짜</option>
+                        <option value="type">유형</option>
+                    </select>
+                </div>
+                <button type="button" @click="gridView = !gridView" 
+                        class="p-2 rounded-md hover:bg-gray-100 transition-colors">
+                    <svg x-show="!gridView" class="h-5 w-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                    </svg>
+                    <svg x-show="gridView" class="h-5 w-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <div class="overflow-hidden">
+            <!-- Loading State -->
+            <div x-show="loading" class="p-8 text-center">
+                <svg class="animate-spin h-8 w-8 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-gray-500">파일 목록을 불러오는 중...</p>
+            </div>
+            
+            <!-- Empty State -->
+            <div x-show="!loading && filteredFiles.length === 0" class="p-8 text-center">
+                <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 48 48">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <div x-show="searchQuery">
+                    <p class="text-gray-500">'<strong x-text="searchQuery"></strong>' 검색 결과가 없습니다.</p>
+                </div>
+                <div x-show="!searchQuery">
+                    <p class="text-gray-900 font-medium mb-2">업로드된 파일이 없습니다</p>
+                    <p class="text-gray-500">위의 업로드 영역을 사용하여 파일을 업로드하세요.</p>
+                </div>
+            </div>
+            
+            <!-- Grid View -->
+            <div x-show="!loading && filteredFiles.length > 0 && gridView" class="p-6">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <template x-for="file in filteredFiles" :key="file.id">
+                        <div class="group relative bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow">
+                            <div class="flex flex-col items-center text-center">
+                                <!-- File Icon -->
+                                <div class="w-12 h-12 mb-2 flex items-center justify-center rounded-lg" 
+                                     :class="getFileIconBg(file.type)">
+                                    <svg class="w-6 h-6" :class="getFileIconColor(file.type)" fill="currentColor" viewBox="0 0 20 20" x-html="getFileIcon(file.type)"></svg>
+                                </div>
+                                
+                                <!-- File Name -->
+                                <p class="text-sm font-medium text-gray-900 truncate w-full" :title="file.name" x-text="file.name"></p>
+                                
+                                <!-- File Size -->
+                                <p class="text-xs text-gray-500 mt-1" x-text="formatFileSize(file.size)"></p>
+                                
+                                <!-- Actions -->
+                                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div class="flex space-x-1">
+                                        <button type="button" @click="downloadFile(file)" 
+                                                class="p-1 bg-white rounded-full shadow-sm hover:bg-gray-50 transition-all">
+                                            <svg class="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </button>
+                                        <button type="button" @click="deleteFile(file)" 
+                                                class="p-1 bg-white rounded-full shadow-sm hover:bg-red-50 transition-all">
+                                            <svg class="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            
+            <!-- List View -->
+            <div x-show="!loading && filteredFiles.length > 0 && !gridView" class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">파일명</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">크기</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">유형</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">업로드일</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <template x-for="file in filteredFiles" :key="file.id">
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0 h-8 w-8">
+                                            <div class="w-8 h-8 flex items-center justify-center rounded" 
+                                                 :class="getFileIconBg(file.type)">
+                                                <svg class="w-4 h-4" :class="getFileIconColor(file.type)" fill="currentColor" viewBox="0 0 20 20" x-html="getFileIcon(file.type)"></svg>
+                                            </div>
+                                        </div>
+                                        <div class="ml-4">
+                                            <div class="text-sm font-medium text-gray-900" x-text="file.name"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatFileSize(file.size)"></td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
+                                          :class="getFileTypeBadge(file.type)" x-text="file.type || 'Unknown'"></span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="$store.app.formatDate(file.uploadedAt)"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                    <div class="flex items-center space-x-2">
+                                        <button type="button" @click="downloadFile(file)" 
+                                                class="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-all">
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </button>
+                                        <button type="button" @click="deleteFile(file)" 
+                                                class="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-all">
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function fileManager() {
+    return {
+        // 상태 변수들
+        loading: false,
+        uploading: false,
+        uploadProgress: 0,
+        isDragging: false,
+        files: [],
+        filteredFiles: [],
+        searchQuery: '',
+        sortBy: 'date',
+        gridView: true,
+
+        // 초기화
+        async init() {
+            await this.loadFiles();
+        },
+
+        // 파일 목록 로드
+        async loadFiles() {
+            this.loading = true;
+            try {
+                const response = await $store.app.api('/files');
+                this.files = response.data || [];
+                this.searchFiles();
+            } catch (error) {
+                console.error('파일 목록 로드 실패:', error);
+                $store.app.showToast('파일 목록을 불러올 수 없습니다: ' + error.message, 'error');
+                this.files = [];
+                this.filteredFiles = [];
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        // 파일 검색
+        searchFiles() {
+            if (!this.searchQuery.trim()) {
+                this.filteredFiles = [...this.files];
+            } else {
+                const query = this.searchQuery.toLowerCase();
+                this.filteredFiles = this.files.filter(file => 
+                    file.name.toLowerCase().includes(query) ||
+                    (file.type && file.type.toLowerCase().includes(query))
+                );
+            }
+            this.sortFiles();
+        },
+
+        // 파일 정렬
+        sortFiles() {
+            this.filteredFiles.sort((a, b) => {
+                switch (this.sortBy) {
+                    case 'name':
+                        return a.name.localeCompare(b.name);
+                    case 'size':
+                        return b.size - a.size;
+                    case 'type':
+                        return (a.type || '').localeCompare(b.type || '');
+                    case 'date':
+                    default:
+                        return new Date(b.uploadedAt) - new Date(a.uploadedAt);
+                }
+            });
+        },
+
+        // 드래그앤드롭 처리
+        handleDrop(event) {
+            this.isDragging = false;
+            const files = Array.from(event.dataTransfer.files);
+            this.uploadFiles(files);
+        },
+
+        // 파일 선택 처리
+        handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            this.uploadFiles(files);
+            event.target.value = ''; // 같은 파일 재선택 가능하도록
+        },
+
+        // 파일 업로드
+        async uploadFiles(files) {
+            if (files.length === 0) return;
+
+            this.uploading = true;
+            this.uploadProgress = 0;
+
+            try {
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    await $store.app.api('/files/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    this.uploadProgress = Math.round(((i + 1) / files.length) * 100);
+                }
+
+                $store.app.showToast(`${files.length}개 파일이 성공적으로 업로드되었습니다.`, 'success');
+                await this.loadFiles();
+
+            } catch (error) {
+                console.error('파일 업로드 실패:', error);
+                $store.app.showToast('파일 업로드 중 오류가 발생했습니다: ' + error.message, 'error');
+            } finally {
+                this.uploading = false;
+                this.uploadProgress = 0;
+            }
+        },
+
+        // 파일 다운로드
+        async downloadFile(file) {
+            try {
+                const response = await fetch(`/files/${file.id}/download`);
+                if (!response.ok) throw new Error('Download failed');
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                $store.app.showToast(`${file.name} 다운로드가 시작되었습니다.`, 'success');
+            } catch (error) {
+                console.error('파일 다운로드 실패:', error);
+                $store.app.showToast('파일 다운로드 중 오류가 발생했습니다.', 'error');
+            }
+        },
+
+        // 파일 삭제
+        async deleteFile(file) {
+            const confirmed = await $store.app.confirm(`정말로 '${file.name}' 파일을 삭제하시겠습니까?`);
+            if (!confirmed) return;
+
+            try {
+                await $store.app.api(`/files/${file.id}`, { method: 'DELETE' });
+                $store.app.showToast(`${file.name}이 삭제되었습니다.`, 'success');
+                await this.loadFiles();
+            } catch (error) {
+                console.error('파일 삭제 실패:', error);
+                $store.app.showToast('파일 삭제 중 오류가 발생했습니다: ' + error.message, 'error');
+            }
+        },
+
+        // 목록 새로고침
+        async refreshFiles() {
+            await this.loadFiles();
+            $store.app.showToast('파일 목록을 새로고침했습니다.', 'info');
+        },
+
+        // 파일 크기 포맷팅
+        formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        },
+
+        // 파일 아이콘 가져오기
+        getFileIcon(type) {
+            const icons = {
+                'image': '<path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"></path>',
+                'video': '<path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>',
+                'audio': '<path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM15.657 6.343a1 1 0 011.414 0A9.972 9.972 0 0119 12a9.972 9.972 0 01-1.929 5.657 1 1 0 11-1.414-1.414A7.971 7.971 0 0017 12c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 12a5.984 5.984 0 01-.757 2.828 1 1 0 11-1.415-1.656A3.989 3.989 0 0013 12a3.989 3.989 0 00-.172-1.172 1 1 0 010-1.657z" clip-rule="evenodd"></path>',
+                'pdf': '<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>',
+                'document': '<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"></path>',
+                'archive': '<path fill-rule="evenodd" d="M3 7v10a2 2 0 002 2h10a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2 2v8z" clip-rule="evenodd"></path>'
+            };
+
+            if (!type) return icons.document;
+
+            if (type.startsWith('image/')) return icons.image;
+            if (type.startsWith('video/')) return icons.video;
+            if (type.startsWith('audio/')) return icons.audio;
+            if (type === 'application/pdf') return icons.pdf;
+            if (type.includes('zip') || type.includes('rar') || type.includes('tar')) return icons.archive;
+            
+            return icons.document;
+        },
+
+        // 파일 아이콘 배경색
+        getFileIconBg(type) {
+            if (!type) return 'bg-gray-100';
+            
+            if (type.startsWith('image/')) return 'bg-green-100';
+            if (type.startsWith('video/')) return 'bg-purple-100';
+            if (type.startsWith('audio/')) return 'bg-blue-100';
+            if (type === 'application/pdf') return 'bg-red-100';
+            if (type.includes('zip') || type.includes('rar') || type.includes('tar')) return 'bg-yellow-100';
+            
+            return 'bg-gray-100';
+        },
+
+        // 파일 아이콘 색상
+        getFileIconColor(type) {
+            if (!type) return 'text-gray-600';
+            
+            if (type.startsWith('image/')) return 'text-green-600';
+            if (type.startsWith('video/')) return 'text-purple-600';
+            if (type.startsWith('audio/')) return 'text-blue-600';
+            if (type === 'application/pdf') return 'text-red-600';
+            if (type.includes('zip') || type.includes('rar') || type.includes('tar')) return 'text-yellow-600';
+            
+            return 'text-gray-600';
+        },
+
+        // 파일 타입 배지
+        getFileTypeBadge(type) {
+            if (!type) return 'bg-gray-100 text-gray-800';
+            
+            if (type.startsWith('image/')) return 'bg-green-100 text-green-800';
+            if (type.startsWith('video/')) return 'bg-purple-100 text-purple-800';
+            if (type.startsWith('audio/')) return 'bg-blue-100 text-blue-800';
+            if (type === 'application/pdf') return 'bg-red-100 text-red-800';
+            if (type.includes('zip') || type.includes('rar') || type.includes('tar')) return 'bg-yellow-100 text-yellow-800';
+            
+            return 'bg-gray-100 text-gray-800';
+        }
+    };
+}
+</script>
+{{end}} 

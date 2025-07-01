@@ -132,6 +132,88 @@ tmidb-cli <--> IPC Client <--> Unix Socket <--> IPC Server <--> Supervisor
 - **설명**: 모든 tmiDB 컴포넌트의 상태를 요약해서 표시합니다.
 - **표시 정보**: 상태, PID, 가동 시간, 메모리 사용량, CPU 사용률
 
+### 5. 파일 복사 (File Copy)
+
+#### `tmidb-cli copy receive [--port PORT] [--path PATH]`
+
+- **설명**: 파일 수신 서버를 시작합니다.
+- **매개변수**:
+  - `--port, -p`: 수신 포트 (기본값: 8080)
+  - `--path, -d`: 파일 저장 경로 (기본값: /tmp/received)
+- **예시**:
+  ```bash
+  tmidb-cli copy receive --port 9000 --path /data/received
+  ```
+
+#### `tmidb-cli copy send <file/directory> <target-host:port>`
+
+- **설명**: 파일이나 디렉터리를 대상 호스트로 전송합니다.
+- **매개변수**:
+  - `file/directory` (필수): 전송할 파일 또는 디렉터리 경로
+  - `target-host:port` (필수): 대상 호스트와 포트
+- **예시**:
+  ```bash
+  tmidb-cli copy send /data/backup.tar.gz 192.168.1.100:9000
+  tmidb-cli copy send /logs/ server2:8080
+  ```
+
+#### `tmidb-cli copy status [session-id]`
+
+- **설명**: 복사 세션의 상태를 표시합니다.
+- **매개변수**:
+  - `session-id` (선택): 특정 세션 ID (생략 시 모든 활성 세션)
+- **출력 정보**:
+  - 세션 ID, 모드 (send/receive), 상태, 진행률
+  - 전송 속도, 예상 완료 시간 (ETA)
+- **예시**:
+  ```bash
+  tmidb-cli copy status                    # 모든 활성 세션
+  tmidb-cli copy status recv-1234567890-8080  # 특정 세션
+  ```
+
+#### `tmidb-cli copy list`
+
+- **설명**: 모든 복사 세션의 목록을 표시합니다.
+- **출력 정보**: 세션 ID, 모드, 상태, 시작 시간, 파일 경로
+
+#### `tmidb-cli copy stop <session-id>`
+
+- **설명**: 실행 중인 복사 세션을 중지합니다.
+- **매개변수**:
+  - `session-id` (필수): 중지할 세션 ID
+- **예시**:
+  ```bash
+  tmidb-cli copy stop recv-1234567890-8080
+  ```
+
+### 복사 기능 사용 시나리오
+
+#### 시나리오 1: 간단한 파일 전송
+
+```bash
+# 서버 A에서 수신 대기
+tmidb-cli copy receive --port 9000 --path /backup/received
+
+# 서버 B에서 파일 전송
+tmidb-cli copy send /data/important.db server-a:9000
+
+# 전송 상태 모니터링
+tmidb-cli copy status
+```
+
+#### 시나리오 2: 대용량 파일 전송 모니터링
+
+```bash
+# 수신 서버 시작
+tmidb-cli copy receive --port 8080
+
+# 대용량 파일 전송 시작
+tmidb-cli copy send /data/large-backup.tar.gz target-server:8080
+
+# 실시간 진행 상태 확인
+watch tmidb-cli copy status send-1234567890-large-backup.tar.gz
+```
+
 ## 오류 처리
 
 ### 연결 오류
@@ -264,3 +346,11 @@ tmidb-cli <--> IPC Client <--> Unix Socket <--> IPC Server <--> Supervisor
 - [x] 백업/복구 기능 (create/restore/list/delete/verify)
 - [x] 진단 도구 (all/component/connectivity/performance/logs/fix)
 - [x] 성능 분석 및 모니터링
+
+### Phase 5: 파일 복사 기능 ✅ 완료
+
+- [x] 파일 복사 수신 서버 (copy receive)
+- [x] 파일 복사 전송 클라이언트 (copy send)
+- [x] 복사 세션 상태 모니터링 (copy status)
+- [x] 복사 세션 목록 조회 (copy list)
+- [x] 복사 세션 중지 (copy stop)

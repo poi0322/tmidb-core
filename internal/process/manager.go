@@ -224,14 +224,14 @@ func (m *Manager) StartProcess(name string) error {
 		return fmt.Errorf("process %s not found", name)
 	}
 
+	// 뮤텍스 사용 최소화 - 상태만 빠르게 체크
 	process.mutex.Lock()
-	defer process.mutex.Unlock()
-
 	if process.State == StateRunning || process.State == StateStarting {
+		process.mutex.Unlock()
 		return fmt.Errorf("process %s is already running or starting", name)
 	}
-
 	process.State = StateStarting
+	process.mutex.Unlock()
 
 	// 프로세스 컨텍스트 생성
 	ctx, cancel := context.WithCancel(m.ctx)
@@ -314,49 +314,80 @@ func (m *Manager) StopProcess(name string) error {
 		return fmt.Errorf("process %s not found", name)
 	}
 
+	// 뮤텍스 사용 최소화
 	process.mutex.Lock()
-	defer process.mutex.Unlock()
-
 	if process.State != StateRunning {
+		process.mutex.Unlock()
 		return fmt.Errorf("process %s is not running", name)
 	}
 
+	currentPID := process.PID
+	processType := process.Type
 	process.State = StateStopping
+	cmd := process.cmd
+	cancel := process.cancel
+	process.mutex.Unlock()
 
-	// Graceful shutdown 시도
-	if process.cmd != nil && process.cmd.Process != nil {
-		// SIGTERM 전송
-		if err := process.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			log.Printf("⚠️ Failed to send SIGTERM to %s: %v", name, err)
+	// 내부 프로세스의 경우 PID 기반으로 직접 종료
+	if processType == TypeInternal && currentPID > 0 {
+		// 직접 SIGTERM 전송
+		if err := syscall.Kill(currentPID, syscall.SIGTERM); err != nil {
+			log.Printf("⚠️ Failed to send SIGTERM to %s (PID: %d): %v", name, currentPID, err)
 		}
 
-		// 10초 대기
-		done := make(chan error, 1)
-		go func() {
-			done <- process.cmd.Wait()
-		}()
-
-		select {
-		case err := <-done:
-			if err != nil && err.Error() != "signal: terminated" {
-				log.Printf("⚠️ Process %s exited with error: %v", name, err)
+		// 5초 대기 후 강제 종료
+		for i := 0; i < 5; i++ {
+			time.Sleep(1 * time.Second)
+			if !m.isProcessRunning(currentPID) {
+				break
 			}
-		case <-time.After(10 * time.Second):
-			// 강제 종료
-			log.Printf("🔨 Force killing process %s", name)
-			process.cmd.Process.Kill()
-			<-done // Wait for the process to actually exit
+		}
+
+		// 여전히 실행 중이면 강제 종료
+		if m.isProcessRunning(currentPID) {
+			log.Printf("🔨 Force killing process %s (PID: %d)", name, currentPID)
+			syscall.Kill(currentPID, syscall.SIGKILL)
+			time.Sleep(1 * time.Second)
+		}
+	} else {
+		// 외부 프로세스의 경우 기존 방식 사용
+		if cmd != nil && cmd.Process != nil {
+			// SIGTERM 전송
+			if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				log.Printf("⚠️ Failed to send SIGTERM to %s: %v", name, err)
+			}
+
+			// 10초 대기
+			done := make(chan error, 1)
+			go func() {
+				done <- cmd.Wait()
+			}()
+
+			select {
+			case err := <-done:
+				if err != nil && err.Error() != "signal: terminated" {
+					log.Printf("⚠️ Process %s exited with error: %v", name, err)
+				}
+			case <-time.After(10 * time.Second):
+				// 강제 종료
+				log.Printf("🔨 Force killing process %s", name)
+				cmd.Process.Kill()
+				<-done // Wait for the process to actually exit
+			}
 		}
 	}
 
 	// 컨텍스트 취소
-	if process.cancel != nil {
-		process.cancel()
+	if cancel != nil {
+		cancel()
 	}
 
+	// 상태 업데이트
+	process.mutex.Lock()
 	process.State = StateStopped
 	process.PID = 0
 	process.Uptime = 0
+	process.mutex.Unlock()
 
 	log.Printf("🛑 Process stopped: %s", name)
 	return nil
@@ -372,20 +403,60 @@ func (m *Manager) RestartProcess(name string) error {
 		return fmt.Errorf("process %s not found", name)
 	}
 
+	// 뮤텍스 사용 최소화
 	process.mutex.Lock()
+	if process.State == StateRestarting {
+		process.mutex.Unlock()
+		return fmt.Errorf("process %s is already restarting", name)
+	}
+
+	currentState := process.State
+	currentPID := process.PID
+	processType := process.Type
+
 	process.State = StateRestarting
 	process.RestartCount++
 	process.mutex.Unlock()
 
 	log.Printf("🔄 Restarting process: %s", name)
 
-	// 정지 후 시작
-	if err := m.StopProcess(name); err != nil {
-		log.Printf("⚠️ Failed to stop process %s during restart: %v", name, err)
-	}
+	// 내부 프로세스의 경우 PID 기반으로 직접 종료
+	if processType == TypeInternal && currentState == StateRunning && currentPID > 0 {
+		// 직접 SIGTERM 전송
+		if err := syscall.Kill(currentPID, syscall.SIGTERM); err != nil {
+			log.Printf("⚠️ Failed to send SIGTERM to %s (PID: %d): %v", name, currentPID, err)
+		} else {
+			// 3초 대기 후 강제 종료
+			time.Sleep(3 * time.Second)
+			if m.isProcessRunning(currentPID) {
+				log.Printf("🔨 Force killing process %s (PID: %d)", name, currentPID)
+				syscall.Kill(currentPID, syscall.SIGKILL)
+			}
+		}
 
-	// 잠시 대기
-	time.Sleep(2 * time.Second)
+		// 상태 업데이트
+		process.mutex.Lock()
+		process.State = StateStopped
+		process.PID = 0
+		process.mutex.Unlock()
+
+		// 1초 대기 후 재시작
+		time.Sleep(1 * time.Second)
+	} else {
+		// 외부 프로세스의 경우 기존 방식 사용
+		if err := m.StopProcess(name); err != nil {
+			log.Printf("⚠️ Failed to stop process %s during restart: %v", name, err)
+			// 재시작 상태 해제
+			process.mutex.Lock()
+			process.State = StateError
+			process.LastError = fmt.Sprintf("failed to stop during restart: %v", err)
+			process.mutex.Unlock()
+			return err
+		}
+
+		// 잠시 대기
+		time.Sleep(2 * time.Second)
+	}
 
 	return m.StartProcess(name)
 }
@@ -490,31 +561,45 @@ func (m *Manager) watchAttachedProcess(process *Process) {
 // GetProcessList 프로세스 목록 조회
 func (m *Manager) GetProcessList() []ipc.ProcessInfo {
 	m.processesMux.RLock()
-	defer m.processesMux.RUnlock()
+	processMap := make(map[string]*Process)
+	for k, v := range m.processes {
+		processMap[k] = v
+	}
+	m.processesMux.RUnlock()
 
 	var processes []ipc.ProcessInfo
-	for _, proc := range m.processes {
+	for _, proc := range processMap {
+		// 뮤텍스 사용 최소화 - 필요한 데이터만 빠르게 복사
 		proc.mutex.RLock()
+		name := proc.Name
+		ptype := string(proc.Type)
+		state := string(proc.State)
+		pid := proc.PID
+		startTime := proc.StartTime
+		memoryUsage := proc.MemoryUsage
+		cpuUsage := proc.CPUUsage
+		autoRestart := proc.AutoRestart
+		proc.mutex.RUnlock()
 
 		uptime := time.Duration(0)
-		if proc.State == StateRunning && !proc.StartTime.IsZero() {
-			uptime = time.Since(proc.StartTime)
+		if state == "running" && !startTime.IsZero() {
+			uptime = time.Since(startTime)
 		}
 
 		processInfo := ipc.ProcessInfo{
-			Name:      proc.Name,
-			Status:    string(proc.State),
-			PID:       proc.PID,
+			Name:      name,
+			Type:      ptype,
+			Status:    state,
+			PID:       pid,
 			Uptime:    uptime,
-			Memory:    proc.MemoryUsage,
-			CPU:       proc.CPUUsage,
-			Enabled:   proc.AutoRestart,
+			Memory:    memoryUsage,
+			CPU:       cpuUsage,
+			Enabled:   autoRestart,
 			Logs:      true, // 로그는 항상 활성화
-			StartTime: proc.StartTime,
+			StartTime: startTime,
 		}
 
 		processes = append(processes, processInfo)
-		proc.mutex.RUnlock()
 	}
 
 	return processes
@@ -540,6 +625,7 @@ func (m *Manager) GetProcessStatus(name string) (*ipc.ProcessInfo, error) {
 
 	return &ipc.ProcessInfo{
 		Name:      process.Name,
+		Type:      string(process.Type),
 		Status:    string(process.State),
 		PID:       process.PID,
 		Uptime:    uptime,
@@ -648,6 +734,84 @@ func (m *Manager) updateProcessStats() {
 		process.mutex.Lock()
 		process.Uptime = time.Since(process.StartTime)
 		// TODO: 실제 CPU/메모리 사용량 계산 구현
+		process.mutex.Unlock()
+	}
+}
+
+// UpdateProcessStats supervisor에서 호출하는 프로세스 통계 업데이트 (외부 함수들 사용)
+func (m *Manager) UpdateProcessStats(
+	getMemoryUsage func(int) int64,
+	getCPUUsage func(int) float64,
+	getServiceStatus func(string) string,
+	getServicePID func(string) int,
+) {
+	m.processesMux.RLock()
+	processMap := make(map[string]*Process)
+	for k, v := range m.processes {
+		processMap[k] = v
+	}
+	m.processesMux.RUnlock()
+
+	for _, process := range processMap {
+		// 뮤텍스 사용 최소화 - 필요한 데이터만 빠르게 읽기
+		process.mutex.RLock()
+		state := process.State
+		startTime := process.StartTime
+		pid := process.PID
+		ptype := process.Type
+		name := process.Name
+		process.mutex.RUnlock()
+
+		// 통계 계산 (뮤텍스 외부에서)
+		var newUptime time.Duration
+		var newMemoryUsage int64
+		var newCPUUsage float64
+		var newState ProcessState = state
+		var newPID int = pid
+
+		// 기본 uptime 업데이트
+		if state == StateRunning && !startTime.IsZero() {
+			newUptime = time.Since(startTime)
+		}
+
+		// 메모리와 CPU 사용량 업데이트
+		if pid > 0 {
+			newMemoryUsage = getMemoryUsage(pid)
+			newCPUUsage = getCPUUsage(pid)
+		}
+
+		// 시스템 서비스의 경우 상태 업데이트
+		if ptype == TypeService || ptype == TypeExternal {
+			status := getServiceStatus(name)
+			switch status {
+			case "active":
+				newState = StateRunning
+			case "inactive":
+				newState = StateStopped
+			case "failed":
+				newState = StateError
+			default:
+				// 상태를 변경하지 않음
+			}
+
+			// PID가 없는 경우 서비스 PID 조회
+			if newState == StateRunning && pid == 0 {
+				servicePID := getServicePID(name)
+				if servicePID > 0 {
+					newPID = servicePID
+					newMemoryUsage = getMemoryUsage(servicePID)
+					newCPUUsage = getCPUUsage(servicePID)
+				}
+			}
+		}
+
+		// 뮤텍스로 보호된 업데이트 (최소한의 시간)
+		process.mutex.Lock()
+		process.Uptime = newUptime
+		process.MemoryUsage = newMemoryUsage
+		process.CPUUsage = newCPUUsage
+		process.State = newState
+		process.PID = newPID
 		process.mutex.Unlock()
 	}
 }

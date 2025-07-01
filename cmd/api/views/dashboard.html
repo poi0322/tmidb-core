@@ -1,0 +1,729 @@
+{{define "dashboard"}}
+<div x-data="dashboard()" x-init="init()">
+    <!-- System Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Total Targets -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-8 w-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-sm font-medium text-gray-500 truncate">총 타겟 수</dt>
+                        <dd class="text-2xl font-bold text-gray-900" x-text="metrics.totalTargets || '-'"></dd>
+                    </dl>
+                </div>
+            </div>
+            <div class="mt-4 flex items-center text-sm text-gray-500">
+                <span class="flex items-center">
+                    <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                    활성
+                </span>
+            </div>
+        </div>
+
+        <!-- Total Categories -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-8 w-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"></path>
+                    </svg>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-sm font-medium text-gray-500 truncate">카테고리 수</dt>
+                        <dd class="text-2xl font-bold text-gray-900" x-text="metrics.totalCategories || '-'"></dd>
+                    </dl>
+                </div>
+            </div>
+            <div class="mt-4 flex items-center text-sm text-gray-500">
+                <span class="flex items-center">
+                    <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                    정상
+                </span>
+            </div>
+        </div>
+
+        <!-- Cache Hit Rate -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-8 w-8 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-sm font-medium text-gray-500 truncate">캐시 히트율</dt>
+                        <dd class="text-2xl font-bold text-gray-900" x-text="(metrics.cacheHitRate || 0).toFixed(1) + '%'"></dd>
+                    </dl>
+                </div>
+            </div>
+            <div class="mt-4 flex items-center text-sm text-gray-500">
+                <span class="flex items-center">
+                    <span class="w-2 h-2 rounded-full mr-2" :class="getCacheStatusColor()"></span>
+                    <span x-text="getCacheStatusText()"></span>
+                </span>
+            </div>
+        </div>
+
+        <!-- API Calls -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-8 w-8 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-sm font-medium text-gray-500 truncate">오늘 API 호출</dt>
+                        <dd class="text-2xl font-bold text-gray-900" x-text="$store.app.formatNumber(metrics.todayApiCalls || 0)"></dd>
+                    </dl>
+                </div>
+            </div>
+            <div class="mt-4 flex items-center text-sm text-gray-500">
+                <span class="flex items-center">
+                    <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                    활성
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Services Status & Quick Actions -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <!-- System Services Status -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center">
+                    <svg class="h-5 w-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    <h3 class="text-lg font-medium text-gray-900">시스템 서비스 상태</h3>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="space-y-4">
+                    <!-- PostgreSQL -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="h-8 w-8 text-blue-600 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"></path>
+                            </svg>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">PostgreSQL</div>
+                                <div class="text-sm text-gray-500">데이터베이스 서버</div>
+                            </div>
+                        </div>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
+                              :class="getServiceStatusClass('database')">
+                            <span class="w-2 h-2 rounded-full mr-1.5" :class="getServiceStatusDot('database')"></span>
+                            <span x-text="getServiceStatusText('database')"></span>
+                        </span>
+                    </div>
+
+                    <!-- NATS -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="h-8 w-8 text-green-600 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path>
+                                <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path>
+                            </svg>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">NATS</div>
+                                <div class="text-sm text-gray-500">메시지 브로커</div>
+                            </div>
+                        </div>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
+                              :class="getServiceStatusClass('nats')">
+                            <span class="w-2 h-2 rounded-full mr-1.5" :class="getServiceStatusDot('nats')"></span>
+                            <span x-text="getServiceStatusText('nats')"></span>
+                        </span>
+                    </div>
+
+                    <!-- SeaweedFS -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="h-8 w-8 text-purple-600 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z"></path>
+                            </svg>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">SeaweedFS</div>
+                                <div class="text-sm text-gray-500">파일 저장소</div>
+                            </div>
+                        </div>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
+                              :class="getServiceStatusClass('seaweedfs')">
+                            <span class="w-2 h-2 rounded-full mr-1.5" :class="getServiceStatusDot('seaweedfs')"></span>
+                            <span x-text="getServiceStatusText('seaweedfs')"></span>
+                        </span>
+                    </div>
+
+                    <!-- Memory Cache -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="h-8 w-8 text-orange-600 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                            </svg>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">메모리 캐시</div>
+                                <div class="text-sm text-gray-500">내부 캐시 시스템</div>
+                            </div>
+                        </div>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
+                              :class="getServiceStatusClass('cache')">
+                            <span class="w-2 h-2 rounded-full mr-1.5" :class="getServiceStatusDot('cache')"></span>
+                            <span x-text="getServiceStatusText('cache')"></span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center">
+                    <svg class="h-5 w-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"></path>
+                    </svg>
+                    <h3 class="text-lg font-medium text-gray-900">빠른 작업</h3>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-2 gap-3 mb-6">
+                    <button type="button" @click="window.location.href='/categories'" 
+                            class="inline-flex flex-col items-center justify-center px-4 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 btn-hover transition-all">
+                        <svg class="h-6 w-6 mb-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"></path>
+                        </svg>
+                        카테고리 생성
+                    </button>
+                    <button type="button" @click="window.location.href='/data-explorer'" 
+                            class="inline-flex flex-col items-center justify-center px-4 py-3 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 btn-hover transition-all">
+                        <svg class="h-6 w-6 mb-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
+                        </svg>
+                        데이터 조회
+                    </button>
+                    <button type="button" @click="window.location.href='/tokens'" 
+                            class="inline-flex flex-col items-center justify-center px-4 py-3 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 btn-hover transition-all">
+                        <svg class="h-6 w-6 mb-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        토큰 생성
+                    </button>
+                    <button type="button" @click="window.location.href='/files'" 
+                            class="inline-flex flex-col items-center justify-center px-4 py-3 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 btn-hover transition-all">
+                        <svg class="h-6 w-6 mb-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                        파일 업로드
+                    </button>
+                </div>
+                
+                <div class="border-t border-gray-200 pt-6">
+                    <div class="space-y-3">
+                        <button type="button" @click="runSystemCheck()" 
+                                class="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 btn-hover transition-all">
+                            <svg class="h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                            시스템 상태 점검
+                        </button>
+                        <button type="button" @click="clearCache()" 
+                                class="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 btn-hover transition-all">
+                            <svg class="h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
+                            </svg>
+                            캐시 초기화
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activities & System Resources -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <!-- Recent Activities -->
+        <div class="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center">
+                    <svg class="h-5 w-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+                    </svg>
+                    <h3 class="text-lg font-medium text-gray-900">최근 활동</h3>
+                </div>
+                <button type="button" @click="refreshActivities()" 
+                        class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 btn-hover transition-all">
+                    <svg class="h-4 w-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
+                    </svg>
+                    새로고침
+                </button>
+            </div>
+            <div class="overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">시간</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">활동</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">대상</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" x-ref="recentActivities">
+                            <tr x-show="loading">
+                                <td colspan="4" class="px-6 py-8 text-center text-gray-500">
+                                    <div class="flex items-center justify-center">
+                                        <svg class="animate-spin h-5 w-5 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        데이터를 불러오는 중...
+                                    </div>
+                                </td>
+                            </tr>
+                            <template x-for="activity in activities" :key="activity.id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="$store.app.formatDate(activity.timestamp)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <div class="flex items-center">
+                                            <svg class="h-4 w-4 mr-2" :class="getActivityIconClass(activity.type)" fill="currentColor" viewBox="0 0 20 20" x-html="getActivityIcon(activity.type)"></svg>
+                                            <span x-text="activity.description"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="activity.target || '-'"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
+                                              :class="getActivityBadgeClass(activity.status)">
+                                            <span x-text="activity.status"></span>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="!loading && activities.length === 0">
+                                <td colspan="4" class="px-6 py-8 text-center text-gray-500">
+                                    최근 활동이 없습니다.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- System Resource Usage -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center">
+                    <svg class="h-5 w-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    <h3 class="text-lg font-medium text-gray-900">시스템 리소스</h3>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="space-y-6">
+                    <!-- CPU Usage -->
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium text-gray-700">CPU 사용률</span>
+                            <span class="text-sm text-gray-500" x-text="(resources.cpuUsage || 0).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="h-2 rounded-full transition-all duration-300" 
+                                 :class="getResourceBarColor(resources.cpuUsage)"
+                                 :style="`width: ${resources.cpuUsage || 0}%`"></div>
+                        </div>
+                    </div>
+
+                    <!-- Memory Usage -->
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium text-gray-700">메모리 사용률</span>
+                            <span class="text-sm text-gray-500" x-text="(resources.memoryUsage || 0).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="h-2 rounded-full transition-all duration-300" 
+                                 :class="getResourceBarColor(resources.memoryUsage)"
+                                 :style="`width: ${resources.memoryUsage || 0}%`"></div>
+                        </div>
+                    </div>
+
+                    <!-- Disk Usage -->
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium text-gray-700">디스크 사용률</span>
+                            <span class="text-sm text-gray-500" x-text="(resources.diskUsage || 0).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="h-2 rounded-full transition-all duration-300" 
+                                 :class="getResourceBarColor(resources.diskUsage)"
+                                 :style="`width: ${resources.diskUsage || 0}%`"></div>
+                        </div>
+                    </div>
+
+                    <!-- Cache Usage -->
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium text-gray-700">캐시 사용률</span>
+                            <span class="text-sm text-gray-500" x-text="(resources.cacheUsage || 0).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="h-2 rounded-full transition-all duration-300" 
+                                 :class="getResourceBarColor(resources.cacheUsage)"
+                                 :style="`width: ${resources.cacheUsage || 0}%`"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-6 pt-6 border-t border-gray-200">
+                    <span class="text-xs text-gray-500">
+                        마지막 업데이트: <span x-text="lastUpdate"></span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Status Chart -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div class="flex items-center">
+                <svg class="h-5 w-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                <h3 class="text-lg font-medium text-gray-900">API 호출 통계 (최근 24시간)</h3>
+            </div>
+            <div class="flex items-center space-x-1">
+                <button type="button" @click="updateChartPeriod('1h')" 
+                        class="px-3 py-1 text-sm font-medium rounded-md transition-all" 
+                        :class="chartPeriod === '1h' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-700'">
+                    1시간
+                </button>
+                <button type="button" @click="updateChartPeriod('6h')" 
+                        class="px-3 py-1 text-sm font-medium rounded-md transition-all" 
+                        :class="chartPeriod === '6h' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-700'">
+                    6시간
+                </button>
+                <button type="button" @click="updateChartPeriod('24h')" 
+                        class="px-3 py-1 text-sm font-medium rounded-md transition-all" 
+                        :class="chartPeriod === '24h' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-700'">
+                    24시간
+                </button>
+            </div>
+        </div>
+        <div class="p-6">
+            <canvas x-ref="apiChart" class="w-full h-64"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+function dashboard() {
+    return {
+        // 상태 변수들
+        loading: false,
+        metrics: {
+            totalTargets: 0,
+            totalCategories: 0,
+            cacheHitRate: 0,
+            todayApiCalls: 0
+        },
+        serviceStatus: {
+            database: 'unknown',
+            nats: 'unknown',
+            seaweedfs: 'unknown',
+            cache: 'unknown'
+        },
+        activities: [],
+        resources: {
+            cpuUsage: 0,
+            memoryUsage: 0,
+            diskUsage: 0,
+            cacheUsage: 0
+        },
+        chartPeriod: '24h',
+        lastUpdate: '-',
+        apiChart: null,
+
+        // 초기화
+        async init() {
+            await this.loadAllData();
+            await this.initApiChart();
+            
+            // 30초마다 자동 새로고침
+            $store.app.autoRefresh.start('dashboard', () => this.refreshDashboard(), 30);
+        },
+
+        // 전체 데이터 로드
+        async loadAllData() {
+            this.loading = true;
+            try {
+                await Promise.all([
+                    this.loadSystemMetrics(),
+                    this.loadSystemStatus(),
+                    this.loadRecentActivities(),
+                    this.loadSystemResources()
+                ]);
+                this.lastUpdate = $store.app.formatDate(new Date());
+            } catch (error) {
+                console.error('대시보드 데이터 로드 실패:', error);
+                $store.app.showToast('대시보드 데이터를 불러오는데 실패했습니다.', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        // 대시보드 새로고침
+        async refreshDashboard() {
+            await this.loadAllData();
+        },
+
+        // 시스템 메트릭 로드
+        async loadSystemMetrics() {
+            try {
+                const response = await $store.app.api('/manage/dashboard/metrics');
+                this.metrics = {
+                    totalTargets: response.data.total_targets || 0,
+                    totalCategories: response.data.total_categories || 0,
+                    cacheHitRate: response.data.cache_hit_rate || 0,
+                    todayApiCalls: response.data.today_api_calls || 0
+                };
+            } catch (error) {
+                console.error('시스템 메트릭 로드 실패:', error);
+            }
+        },
+
+        // 시스템 상태 로드
+        async loadSystemStatus() {
+            try {
+                const response = await $store.app.api('/health');
+                this.serviceStatus = {
+                    database: response.data.database || 'error',
+                    nats: response.data.nats || 'error',
+                    seaweedfs: response.data.seaweedfs || 'error',
+                    cache: response.data.cache || 'error'
+                };
+            } catch (error) {
+                console.error('시스템 상태 로드 실패:', error);
+                this.serviceStatus = {
+                    database: 'error',
+                    nats: 'error',
+                    seaweedfs: 'error',
+                    cache: 'error'
+                };
+            }
+        },
+
+        // 최근 활동 로드
+        async loadRecentActivities() {
+            try {
+                const response = await $store.app.api('/manage/dashboard/activities?limit=10');
+                this.activities = response.data || [];
+            } catch (error) {
+                console.error('최근 활동 로드 실패:', error);
+                this.activities = [];
+            }
+        },
+
+        // 시스템 리소스 로드
+        async loadSystemResources() {
+            try {
+                const response = await $store.app.api('/manage/dashboard/resources');
+                this.resources = {
+                    cpuUsage: response.data.cpu_usage || 0,
+                    memoryUsage: response.data.memory_usage || 0,
+                    diskUsage: response.data.disk_usage || 0,
+                    cacheUsage: response.data.cache_usage || 0
+                };
+            } catch (error) {
+                console.error('시스템 리소스 로드 실패:', error);
+            }
+        },
+
+        // 캐시 상태 관련 메서드들
+        getCacheStatusColor() {
+            if (this.metrics.cacheHitRate >= 80) return 'bg-green-400';
+            if (this.metrics.cacheHitRate >= 50) return 'bg-yellow-400';
+            return 'bg-red-400';
+        },
+
+        getCacheStatusText() {
+            if (this.metrics.cacheHitRate >= 80) return '우수';
+            if (this.metrics.cacheHitRate >= 50) return '보통';
+            return '낮음';
+        },
+
+        // 서비스 상태 관련 메서드들
+        getServiceStatusClass(service) {
+            const status = this.serviceStatus[service];
+            if (status === 'healthy') return 'bg-green-100 text-green-800';
+            if (status === 'warning') return 'bg-yellow-100 text-yellow-800';
+            return 'bg-red-100 text-red-800';
+        },
+
+        getServiceStatusDot(service) {
+            const status = this.serviceStatus[service];
+            if (status === 'healthy') return 'bg-green-400';
+            if (status === 'warning') return 'bg-yellow-400';
+            return 'bg-red-400';
+        },
+
+        getServiceStatusText(service) {
+            const status = this.serviceStatus[service];
+            if (status === 'healthy') return '정상';
+            if (status === 'warning') return '경고';
+            if (status === 'unknown') return '확인 중';
+            return '오류';
+        },
+
+        // 활동 관련 메서드들
+        getActivityIcon(type) {
+            const icons = {
+                'data_create': '<path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"></path>',
+                'data_update': '<path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"></path>',
+                'data_delete': '<path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>',
+                'category_create': '<path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"></path>',
+                'token_create': '<path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"></path>',
+                'user_login': '<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>'
+            };
+            return icons[type] || '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>';
+        },
+
+        getActivityIconClass(type) {
+            const colors = {
+                'data_create': 'text-green-500',
+                'data_update': 'text-blue-500',
+                'data_delete': 'text-red-500',
+                'category_create': 'text-purple-500',
+                'token_create': 'text-yellow-500',
+                'user_login': 'text-gray-500'
+            };
+            return colors[type] || 'text-gray-400';
+        },
+
+        getActivityBadgeClass(status) {
+            const classes = {
+                'success': 'bg-green-100 text-green-800',
+                'completed': 'bg-green-100 text-green-800',
+                'failed': 'bg-red-100 text-red-800',
+                'pending': 'bg-yellow-100 text-yellow-800',
+                'running': 'bg-blue-100 text-blue-800'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-800';
+        },
+
+        // 리소스 바 색상
+        getResourceBarColor(value) {
+            if (value >= 80) return 'bg-red-500';
+            if (value >= 60) return 'bg-yellow-500';
+            return 'bg-green-500';
+        },
+
+        // 최근 활동 새로고침
+        async refreshActivities() {
+            await this.loadRecentActivities();
+            $store.app.showToast('최근 활동을 새로고침했습니다.', 'info');
+        },
+
+        // API 차트 초기화
+        async initApiChart() {
+            const ctx = this.$refs.apiChart.getContext('2d');
+            
+            this.apiChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'API 호출 수',
+                        data: [],
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+            
+            await this.updateApiChart(this.chartPeriod);
+        },
+
+        // 차트 기간 변경
+        async updateChartPeriod(period) {
+            this.chartPeriod = period;
+            await this.updateApiChart(period);
+        },
+
+        // API 차트 업데이트
+        async updateApiChart(period) {
+            try {
+                const response = await $store.app.api(`/manage/dashboard/api-stats?period=${period}`);
+                const stats = response.data;
+                
+                this.apiChart.data.labels = stats.labels;
+                this.apiChart.data.datasets[0].data = stats.values;
+                this.apiChart.update();
+            } catch (error) {
+                console.error('API 차트 업데이트 실패:', error);
+            }
+        },
+
+        // 시스템 상태 점검
+        async runSystemCheck() {
+            try {
+                await $store.app.api('/manage/system/check', { method: 'POST' });
+                $store.app.showToast('시스템 상태 점검이 완료되었습니다.', 'success');
+                await this.loadAllData();
+            } catch (error) {
+                $store.app.showToast('시스템 상태 점검 중 오류가 발생했습니다: ' + error.message, 'error');
+            }
+        },
+
+        // 캐시 초기화
+        async clearCache() {
+            if (!await $store.app.confirm('정말로 캐시를 초기화하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                await $store.app.api('/manage/cache/clear', { method: 'POST' });
+                $store.app.showToast('캐시가 성공적으로 초기화되었습니다.', 'success');
+                await this.loadSystemMetrics();
+            } catch (error) {
+                $store.app.showToast('캐시 초기화 중 오류가 발생했습니다: ' + error.message, 'error');
+            }
+        }
+    };
+}
+
+</script>
+{{end}} 

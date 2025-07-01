@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - tmiDB Console</title>
+    
+    <!-- Tailwind CSS -->
+    <link href="/static/css/tailwind.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="/static/js/chart.min.js"></script>
+    <!-- Alpine.js -->
+    <script defer src="/static/js/alpine.min.js"></script>
+    
+    <style>
+        /* 커스텀 스타일 */
+        .sidebar-transition {
+            transition: transform 0.3s ease-in-out;
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn-hover:hover {
+            transform: translateY(-1px);
+        }
+        
+        /* 로딩 스피너 애니메이션 */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        
+        /* 토스트 알림 애니메이션 */
+        .toast-enter {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        
+        .toast-enter-active {
+            transform: translateX(0);
+            opacity: 1;
+            transition: all 0.3s ease;
+        }
+        
+        .toast-exit {
+            transform: translateX(100%);
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+<body class="h-full" x-data="{ sidebarOpen: false, darkMode: false }" :class="{ 'dark': darkMode }">
+    <!-- Top Navigation -->
+    <nav class="bg-white border-b border-gray-200 fixed w-full z-30 top-0">
+        <div class="px-3 py-3 lg:px-5 lg:pl-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center justify-start">
+                    <!-- Mobile menu button -->
+                    <button @click="sidebarOpen = !sidebarOpen" type="button" 
+                            class="inline-flex items-center p-2 text-sm text-gray-500 rounded-lg lg:hidden hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                    <!-- Brand -->
+                    <a href="/dashboard" class="flex ml-2 md:mr-24">
+                        <svg class="h-8 w-8 text-blue-600 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"></path>
+                        </svg>
+                        <span class="self-center text-xl font-semibold sm:text-2xl whitespace-nowrap text-gray-900">tmiDB Console</span>
+                    </a>
+                </div>
+                
+                <div class="flex items-center">
+                    <!-- Dark mode toggle -->
+                    <button @click="darkMode = !darkMode" type="button" 
+                            class="text-gray-500 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 rounded-lg text-sm p-2.5 mr-2">
+                        <svg x-show="!darkMode" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                        </svg>
+                        <svg x-show="darkMode" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                    
+                    <!-- User menu -->
+                    <div class="relative" x-data="{ userMenuOpen: false }">
+                        <button @click="userMenuOpen = !userMenuOpen" type="button" 
+                                class="flex text-sm bg-gray-800 rounded-full focus:ring-4 focus:ring-gray-300">
+                            <svg class="w-8 h-8 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
+                            </svg>
+                        </button>
+                        
+                        <!-- User dropdown -->
+                        <div x-show="userMenuOpen" @click.away="userMenuOpen = false" 
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="transform opacity-0 scale-95"
+                             x-transition:enter-end="transform opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-75"
+                             x-transition:leave-start="transform opacity-100 scale-100"
+                             x-transition:leave-end="transform opacity-0 scale-95"
+                             class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50">
+                            <div class="px-4 py-3">
+                                <span class="block text-sm text-gray-900">{{if .CurrentUser}}{{.CurrentUser.Username}}{{else}}관리자{{end}}</span>
+                                <span class="block text-sm text-gray-500 truncate">admin@tmidb.com</span>
+                            </div>
+                            <ul class="py-1">
+                                <li><a href="/profile" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                    <svg class="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    프로필
+                                </a></li>
+                                <li><a href="/settings" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                    <svg class="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    설정
+                                </a></li>
+                                <li><hr class="my-1 border-gray-200"></li>
+                                <li><a href="/logout" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                    <svg class="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    로그아웃
+                                </a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="flex pt-16 overflow-hidden bg-gray-50">
+        <!-- Sidebar -->
+        <aside class="fixed top-0 left-0 z-20 flex flex-col flex-shrink-0 hidden w-64 h-full pt-16 font-normal duration-75 lg:flex sidebar-transition" 
+               :class="{ 'transform translate-x-0': sidebarOpen, 'transform -translate-x-full': !sidebarOpen }"
+               id="sidebar">
+            <div class="relative flex-1 flex flex-col min-h-0 border-r border-gray-200 bg-white pt-0">
+                <div class="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
+                    <div class="flex-1 px-3 bg-white divide-y space-y-1">
+                        <ul class="space-y-2 pb-2">
+                            <li>
+                                <a href="/dashboard" class="{{if eq .CurrentPage "dashboard"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                    <svg class="{{if eq .CurrentPage "dashboard"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z"></path>
+                                        <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z"></path>
+                                    </svg>
+                                    대시보드
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/categories" class="{{if eq .CurrentPage "categories"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                    <svg class="{{if eq .CurrentPage "categories"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"></path>
+                                    </svg>
+                                    카테고리 관리
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/data-explorer" class="{{if eq .CurrentPage "data-explorer"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                    <svg class="{{if eq .CurrentPage "data-explorer"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    데이터 탐색기
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/listeners" class="{{if eq .CurrentPage "listeners"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                    <svg class="{{if eq .CurrentPage "listeners"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path>
+                                        <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path>
+                                    </svg>
+                                    리스너 관리
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/files" class="{{if eq .CurrentPage "files"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                    <svg class="{{if eq .CurrentPage "files"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    파일 관리
+                                </a>
+                            </li>
+                        </ul>
+                        
+                        <!-- 관리자 전용 메뉴 -->
+                        {{if .IsAdmin}}
+                        <div class="pt-4 mt-4">
+                            <p class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">관리자 전용</p>
+                            <ul class="mt-2 space-y-2">
+                                <li>
+                                    <a href="/users" class="{{if eq .CurrentPage "users"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                        <svg class="{{if eq .CurrentPage "users"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"></path>
+                                        </svg>
+                                        사용자 관리
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="/tokens" class="{{if eq .CurrentPage "tokens"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                        <svg class="{{if eq .CurrentPage "tokens"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        토큰 관리
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="/migrations" class="{{if eq .CurrentPage "migrations"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                        <svg class="{{if eq .CurrentPage "migrations"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        마이그레이션
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="/logs" class="{{if eq .CurrentPage "logs"}}bg-blue-100 border-r-4 border-blue-500 text-blue-700{{else}}text-gray-900 hover:bg-gray-100{{end}} group flex items-center px-2 py-2 text-sm font-medium rounded-l-md">
+                                        <svg class="{{if eq .CurrentPage "logs"}}text-blue-500{{else}}text-gray-400 group-hover:text-gray-500{{end}} mr-3 flex-shrink-0 h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"></path>
+                                            <path fill-rule="evenodd" d="M4 5a2 2 0 012-2v1a2 2 0 002 2h4a2 2 0 002-2V3a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 3a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        로그 및 감사
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Mobile sidebar backdrop -->
+        <div x-show="sidebarOpen" @click="sidebarOpen = false" 
+             class="fixed inset-0 z-10 bg-gray-600 bg-opacity-50 lg:hidden"></div>
+
+        <!-- Main Content -->
+        <main class="relative w-0 flex-1 overflow-hidden" id="main-content">
+            <div class="relative flex-1 flex flex-col overflow-y-auto focus:outline-none">
+                <!-- Page Header -->
+                {{if .PageHeader}}
+                <div class="bg-white shadow">
+                    <div class="px-4 sm:px-6 lg:max-w-6xl lg:mx-auto lg:px-8">
+                        <div class="py-6 md:flex md:items-center md:justify-between">
+                            <div class="flex-1 min-w-0">
+                                <h1 class="text-2xl font-bold leading-7 text-gray-900 sm:leading-9 sm:truncate">
+                                    {{.PageHeader}}
+                                </h1>
+                            </div>
+                            {{if .PageActions}}
+                            <div class="mt-6 flex space-x-3 md:mt-0 md:ml-4">
+                                {{.PageActions}}
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+
+                <!-- Flash Messages -->
+                <div class="px-4 sm:px-6 lg:max-w-6xl lg:mx-auto lg:px-8 pt-4">
+                    {{if .FlashSuccess}}
+                    <div class="bg-green-50 border border-green-200 rounded-md p-4 mb-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm font-medium text-green-800">{{.FlashSuccess}}</p>
+                            </div>
+                            <div class="ml-auto pl-3">
+                                <div class="-mx-1.5 -my-1.5">
+                                    <button type="button" class="inline-flex bg-green-50 rounded-md p-1.5 text-green-500 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-green-50 focus:ring-green-600">
+                                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                    
+                    {{if .FlashError}}
+                    <div class="bg-red-50 border border-red-200 rounded-md p-4 mb-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm font-medium text-red-800">{{.FlashError}}</p>
+                            </div>
+                            <div class="ml-auto pl-3">
+                                <div class="-mx-1.5 -my-1.5">
+                                    <button type="button" class="inline-flex bg-red-50 rounded-md p-1.5 text-red-500 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600">
+                                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+
+                <!-- Page Content -->
+                <div class="px-4 sm:px-6 lg:max-w-6xl lg:mx-auto lg:px-8 py-6">
+                    {{embed}}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 space-y-4" x-data="toastContainer()">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div x-show="toast.show" 
+                 x-transition:enter="transform ease-out duration-300 transition"
+                 x-transition:enter-start="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
+                 x-transition:enter-end="translate-y-0 opacity-100 sm:translate-x-0"
+                 x-transition:leave="transition ease-in duration-100"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 class="max-w-sm w-full shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden"
+                 :class="toast.type === 'success' ? 'bg-green-500' : toast.type === 'error' ? 'bg-red-500' : 'bg-blue-500'">
+                <div class="p-4">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <svg x-show="toast.type === 'success'" class="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                            <svg x-show="toast.type === 'error'" class="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                            </svg>
+                            <svg x-show="toast.type === 'info'" class="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-3 w-0 flex-1 pt-0.5">
+                            <p class="text-sm font-medium text-white" x-text="toast.message"></p>
+                        </div>
+                        <div class="ml-4 flex-shrink-0 flex">
+                            <button @click="removeToast(toast.id)" class="bg-transparent rounded-md inline-flex text-white hover:text-gray-200 focus:outline-none">
+                                <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div x-data="{ loading: false }" x-show="loading" x-cloak 
+         class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white rounded-lg p-8 shadow-xl">
+                <div class="flex items-center space-x-4">
+                    <svg class="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="text-lg font-medium text-gray-900">로딩 중...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Common JavaScript -->
+    <script>
+        // Alpine.js 전역 상태 및 유틸리티
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('app', {
+                // 전역 상태
+                currentUser: {{if .CurrentUser}}'{{.CurrentUser.Username}}'{{else}}null{{end}},
+                isAdmin: {{if .IsAdmin}}true{{else}}false{{end}},
+                loading: false,
+                toasts: [],
+                
+                // API 호출 헬퍼
+                async api(endpoint, options = {}) {
+                    const url = '/api' + endpoint;
+                    const config = {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...options.headers
+                        },
+                        ...options
+                    };
+                    
+                    if (config.body && typeof config.body === 'object') {
+                        config.body = JSON.stringify(config.body);
+                    }
+                    
+                    try {
+                        this.loading = true;
+                        const response = await fetch(url, config);
+                        const data = await response.json();
+                        
+                        if (!response.ok) {
+                            throw new Error(data.error || `HTTP ${response.status}`);
+                        }
+                        
+                        return data;
+                    } catch (error) {
+                        console.error('API Error:', error);
+                        this.showToast(error.message, 'error');
+                        throw error;
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                // 토스트 알림
+                showToast(message, type = 'info') {
+                    const id = Date.now();
+                    const toast = { id, message, type, show: true };
+                    this.toasts.push(toast);
+                    
+                    // 5초 후 자동 제거
+                    setTimeout(() => {
+                        this.removeToast(id);
+                    }, 5000);
+                },
+                
+                removeToast(id) {
+                    const index = this.toasts.findIndex(toast => toast.id === id);
+                    if (index > -1) {
+                        this.toasts[index].show = false;
+                        setTimeout(() => {
+                            this.toasts.splice(index, 1);
+                        }, 300);
+                    }
+                },
+                
+                // 페이지 새로고침 (주기적 업데이트용)
+                autoRefresh: {
+                    intervals: new Map(),
+                    
+                    start(key, callback, seconds = 30) {
+                        this.stop(key);
+                        const interval = setInterval(callback, seconds * 1000);
+                        this.intervals.set(key, interval);
+                    },
+                    
+                    stop(key) {
+                        if (this.intervals.has(key)) {
+                            clearInterval(this.intervals.get(key));
+                            this.intervals.delete(key);
+                        }
+                    },
+                    
+                    stopAll() {
+                        this.intervals.forEach(interval => clearInterval(interval));
+                        this.intervals.clear();
+                    }
+                },
+                
+                // 폼 검증
+                validateForm(formData) {
+                    const errors = {};
+                    
+                    Object.keys(formData).forEach(key => {
+                        if (formData[key] === '' || formData[key] === null || formData[key] === undefined) {
+                            errors[key] = '필수 항목입니다.';
+                        }
+                    });
+                    
+                    return { isValid: Object.keys(errors).length === 0, errors };
+                },
+                
+                // 날짜 포맷팅
+                formatDate(dateString) {
+                    const date = new Date(dateString);
+                    return date.toLocaleString('ko-KR', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                },
+                
+                // 파일 크기 포맷팅
+                formatFileSize(bytes) {
+                    if (bytes === 0) return '0 Bytes';
+                    const k = 1024;
+                    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                },
+                
+                // 숫자 포맷팅 (천 단위 콤마)
+                formatNumber(num) {
+                    return new Intl.NumberFormat('ko-KR').format(num);
+                },
+                
+                // 확인 대화상자
+                async confirm(message) {
+                    return new Promise((resolve) => {
+                        if (window.confirm(message)) {
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    });
+                }
+            });
+            
+            // Toast 컨테이너 전역 관리
+            Alpine.data('toastContainer', () => ({
+                toasts: Alpine.store('app').toasts,
+                removeToast(id) {
+                    Alpine.store('app').removeToast(id);
+                }
+            }));
+        });
+        
+        // 전역 유틸리티 함수 (Alpine 외부에서도 사용 가능)
+        window.tmiDB = {
+            showToast: (message, type) => Alpine.store('app').showToast(message, type),
+            api: (endpoint, options) => Alpine.store('app').api(endpoint, options),
+            formatDate: (date) => Alpine.store('app').formatDate(date),
+            formatFileSize: (bytes) => Alpine.store('app').formatFileSize(bytes),
+            formatNumber: (num) => Alpine.store('app').formatNumber(num),
+            confirm: (message) => Alpine.store('app').confirm(message)
+        };
+        
+        // 페이지 언로드 시 자동 새로고침 정리
+        window.addEventListener('beforeunload', () => {
+            Alpine.store('app').autoRefresh.stopAll();
+        });
+        
+        // 전역 에러 핸들링
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Unhandled promise rejection:', event.reason);
+            Alpine.store('app').showToast('알 수 없는 오류가 발생했습니다.', 'error');
+        });
+    </script>
+
+    <!-- Page specific scripts -->
+    {{if .Scripts}}
+    {{.Scripts}}
+    {{end}}
+</body>
+</html> 
