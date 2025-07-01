@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -50,6 +52,9 @@ type Manager struct {
 	// Go 1.24 기능: 자원 관리
 	cleanupFuncs []func()
 	cleanupMux   sync.Mutex
+	
+	// External service restart callback
+	externalServiceRestarter func(serviceName string) error
 }
 
 // Process 프로세스 정보
@@ -393,6 +398,11 @@ func (m *Manager) StopProcess(name string) error {
 	return nil
 }
 
+// SetExternalServiceRestarter sets the callback for restarting external services
+func (m *Manager) SetExternalServiceRestarter(restartFunc func(serviceName string) error) {
+	m.externalServiceRestarter = restartFunc
+}
+
 // RestartProcess 프로세스 재시작
 func (m *Manager) RestartProcess(name string) error {
 	m.processesMux.RLock()
@@ -420,6 +430,28 @@ func (m *Manager) RestartProcess(name string) error {
 
 	log.Printf("🔄 Restarting process: %s", name)
 
+	// 외부 프로세스의 경우 supervisor callback 사용
+	if processType == TypeExternal && m.externalServiceRestarter != nil {
+		log.Printf("🔄 Restarting external service: %s", name)
+		
+		// 상태를 restarting으로 설정
+		process.mutex.Lock()
+		process.State = StateRestarting
+		process.mutex.Unlock()
+		
+		// supervisor를 통해 외부 서비스 재시작
+		if err := m.externalServiceRestarter(name); err != nil {
+			process.mutex.Lock()
+			process.State = StateError
+			process.LastError = fmt.Sprintf("failed to restart external service: %v", err)
+			process.mutex.Unlock()
+			return fmt.Errorf("failed to restart external service %s: %w", name, err)
+		}
+		
+		log.Printf("✅ External service %s restarted successfully", name)
+		return nil
+	}
+
 	// 내부 프로세스의 경우 PID 기반으로 직접 종료
 	if processType == TypeInternal && currentState == StateRunning && currentPID > 0 {
 		// 직접 SIGTERM 전송
@@ -443,7 +475,7 @@ func (m *Manager) RestartProcess(name string) error {
 		// 1초 대기 후 재시작
 		time.Sleep(1 * time.Second)
 	} else {
-		// 외부 프로세스의 경우 기존 방식 사용
+		// 기존 방식 사용
 		if err := m.StopProcess(name); err != nil {
 			log.Printf("⚠️ Failed to stop process %s during restart: %v", name, err)
 			// 재시작 상태 해제
@@ -494,6 +526,11 @@ func (m *Manager) AttachProcess(name string, pid int) error {
 
 	// Start monitoring the attached process
 	go m.watchAttachedProcess(process)
+
+	// Start log capturing for external services
+	if process.Type == TypeExternal {
+		go m.captureExternalServiceLogs(process)
+	}
 
 	return nil
 }
@@ -931,4 +968,376 @@ func (m *Manager) addCleanupFunc(fn func()) {
 	defer m.cleanupMux.Unlock()
 
 	m.cleanupFuncs = append(m.cleanupFuncs, fn)
+}
+
+// captureExternalServiceLogs captures logs from external services using various methods
+func (m *Manager) captureExternalServiceLogs(process *Process) {
+	// 중복 로그 캡처 방지를 위한 체크
+	process.mutex.Lock()
+	if process.cleanup != nil {
+		// 이미 로그 캡처가 설정된 경우
+		process.mutex.Unlock()
+		return
+	}
+	process.mutex.Unlock()
+
+	var logSources []string
+	
+	// Define log sources for each external service
+	switch process.Name {
+	case "postgresql":
+		// PostgreSQL can log to different places, try multiple sources
+		logSources = []string{
+			"/data/postgresql/log/postgresql.log",
+			"/var/log/postgresql/postgresql.log",
+		}
+	case "nats":
+		// NATS typically logs to stdout/stderr
+		logSources = []string{
+			"/data/nats/nats.log",
+			"/var/log/nats/nats.log",
+		}
+	case "seaweedfs":
+		// SeaweedFS logs
+		logSources = []string{
+			"/data/seaweedfs/seaweed.log",
+			"/var/log/seaweedfs/seaweed.log",
+		}
+	}
+
+	// Try to tail the first available log source
+	for _, logPath := range logSources {
+		if _, err := os.Stat(logPath); err == nil {
+			log.Printf("📄 Starting log capture for %s from %s", process.Name, logPath)
+			go m.tailLogFile(process, logPath)
+			return
+		}
+	}
+
+	// If no log file found, try to capture from actual service process
+	log.Printf("📄 No log file found for %s, trying to capture from actual service process", process.Name)
+	go m.captureFromActualProcess(process)
+}
+
+// captureFromActualProcess captures logs from the actual service process
+func (m *Manager) captureFromActualProcess(process *Process) {
+	process.mutex.RLock()
+	pid := process.PID
+	name := process.Name
+	process.mutex.RUnlock()
+
+	// Try to find actual service process (child of runuser)
+	actualPID := m.findActualServiceProcess(pid, name)
+	if actualPID != pid && actualPID > 0 {
+		log.Printf("🔍 Found actual service process for %s: PID %d (parent PID: %d)", name, actualPID, pid)
+		// Update the process PID to the actual service process
+		process.mutex.Lock()
+		process.PID = actualPID
+		process.mutex.Unlock()
+		pid = actualPID
+	}
+
+	// Try to capture from service-specific sources
+	switch name {
+	case "postgresql":
+		go m.capturePostgreSQLLogs(process, pid)
+	case "nats":
+		go m.captureNATSLogs(process, pid)
+	case "seaweedfs":
+		go m.captureSeaweedFSLogs(process, pid)
+	}
+}
+
+// capturePostgreSQLLogs captures PostgreSQL logs specifically
+func (m *Manager) capturePostgreSQLLogs(process *Process, pid int) {
+	// PostgreSQL usually logs to stderr
+	logPath := fmt.Sprintf("/proc/%d/fd/2", pid)
+	if file, err := os.Open(logPath); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			select {
+			case <-m.ctx.Done():
+				return
+			default:
+				line := strings.TrimSpace(scanner.Text())
+				if line != "" && m.logManager != nil {
+					// Filter out PostgreSQL system messages we don't want to log
+					if strings.Contains(line, "database \"tmidb\" already exists") {
+						continue
+					}
+					level := logger.LogLevelInfo
+					if strings.Contains(strings.ToLower(line), "error") || 
+					   strings.Contains(strings.ToLower(line), "fatal") {
+						level = logger.LogLevelError
+					}
+					m.logManager.WriteLog(process.Name, level, line)
+				}
+			}
+		}
+	}
+}
+
+// captureNATSLogs captures NATS logs specifically
+func (m *Manager) captureNATSLogs(process *Process, pid int) {
+	// NATS usually logs to stdout
+	logPath := fmt.Sprintf("/proc/%d/fd/1", pid)
+	if file, err := os.Open(logPath); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			select {
+			case <-m.ctx.Done():
+				return
+			default:
+				line := strings.TrimSpace(scanner.Text())
+				if line != "" && m.logManager != nil && !strings.HasPrefix(line, "[") {
+					// Skip lines that look like they're from other services
+					level := logger.LogLevelInfo
+					if strings.Contains(strings.ToLower(line), "error") {
+						level = logger.LogLevelError
+					}
+					m.logManager.WriteLog(process.Name, level, line)
+				}
+			}
+		}
+	}
+}
+
+// captureSeaweedFSLogs captures SeaweedFS logs specifically
+func (m *Manager) captureSeaweedFSLogs(process *Process, pid int) {
+	// SeaweedFS usually logs to stdout
+	logPath := fmt.Sprintf("/proc/%d/fd/1", pid)
+	if file, err := os.Open(logPath); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			select {
+			case <-m.ctx.Done():
+				return
+			default:
+				line := strings.TrimSpace(scanner.Text())
+				if line != "" && m.logManager != nil && !strings.HasPrefix(line, "[") {
+					// Skip lines that look like they're from other services
+					level := logger.LogLevelInfo
+					if strings.Contains(strings.ToLower(line), "error") {
+						level = logger.LogLevelError
+					}
+					m.logManager.WriteLog(process.Name, level, line)
+				}
+			}
+		}
+	}
+}
+
+// tailLogFile tails a log file and sends lines to the log manager
+func (m *Manager) tailLogFile(process *Process, logPath string) {
+	// Open the file
+	file, err := os.Open(logPath)
+	if err != nil {
+		log.Printf("❌ Failed to open log file %s for %s: %v", logPath, process.Name, err)
+		return
+	}
+	defer file.Close()
+
+	// Seek to end of file to only capture new logs
+	file.Seek(0, io.SeekEnd)
+
+	// Create a scanner to read lines
+	scanner := bufio.NewScanner(file)
+	
+	// Monitor the file for new content
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			// Check if process is still running
+			process.mutex.RLock()
+			if process.State != StateRunning {
+				process.mutex.RUnlock()
+				return
+			}
+			process.mutex.RUnlock()
+
+			// Read new lines
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				// Skip empty lines and whitespace-only lines
+				if line != "" && m.logManager != nil {
+					// Determine log level based on content
+					level := logger.LogLevelInfo
+					lowerLine := strings.ToLower(line)
+					if strings.Contains(lowerLine, "error") || 
+					   strings.Contains(lowerLine, "fatal") {
+						level = logger.LogLevelError
+					} else if strings.Contains(lowerLine, "warn") {
+						level = logger.LogLevelWarn
+					}
+					
+					m.logManager.WriteLog(process.Name, level, line)
+				}
+			}
+
+			if err := scanner.Err(); err != nil {
+				log.Printf("❌ Error reading log file %s for %s: %v", logPath, process.Name, err)
+				return
+			}
+		}
+	}
+}
+
+// captureProcessOutput tries to capture output from process file descriptors
+func (m *Manager) captureProcessOutput(process *Process) {
+	process.mutex.RLock()
+	pid := process.PID
+	name := process.Name
+	process.mutex.RUnlock()
+
+	// Try to find actual service process (child of runuser)
+	actualPID := m.findActualServiceProcess(pid, name)
+	if actualPID != pid && actualPID > 0 {
+		log.Printf("🔍 Found actual service process for %s: PID %d (parent PID: %d)", name, actualPID, pid)
+		// Update the process PID to the actual service process
+		process.mutex.Lock()
+		process.PID = actualPID
+		process.mutex.Unlock()
+		pid = actualPID
+	}
+
+	// Try to read from stdout and stderr file descriptors
+	go m.captureFromFD(process, pid, 1, "stdout")
+	go m.captureFromFD(process, pid, 2, "stderr")
+}
+
+// findActualServiceProcess finds the actual service process (child of runuser)
+func (m *Manager) findActualServiceProcess(parentPID int, serviceName string) int {
+	// Read /proc/[pid]/children to find child processes
+	childrenFile := fmt.Sprintf("/proc/%d/task/%d/children", parentPID, parentPID)
+	data, err := os.ReadFile(childrenFile)
+	if err != nil {
+		// Fallback: search through all processes
+		return m.findProcessByName(serviceName)
+	}
+
+	childrenStr := strings.TrimSpace(string(data))
+	if childrenStr == "" {
+		return parentPID
+	}
+
+	// Parse child PIDs
+	childPIDs := strings.Fields(childrenStr)
+	for _, pidStr := range childPIDs {
+		if childPID, err := strconv.Atoi(pidStr); err == nil {
+			// Check if this child process matches the service
+			if m.isServiceProcess(childPID, serviceName) {
+				return childPID
+			}
+		}
+	}
+
+	return parentPID
+}
+
+// findProcessByName finds a process by name
+func (m *Manager) findProcessByName(serviceName string) int {
+	// Read /proc to find processes
+	procDir, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0
+	}
+
+	var searchNames []string
+	switch serviceName {
+	case "postgresql":
+		searchNames = []string{"postgres"}
+	case "nats":
+		searchNames = []string{"nats-server"}
+	case "seaweedfs":
+		searchNames = []string{"weed"}
+	}
+
+	for _, entry := range procDir {
+		if !entry.IsDir() {
+			continue
+		}
+
+		pidStr := entry.Name()
+		if _, err := strconv.Atoi(pidStr); err != nil {
+			continue
+		}
+
+		// Read process command line
+		cmdlineFile := fmt.Sprintf("/proc/%s/cmdline", pidStr)
+		cmdlineData, err := os.ReadFile(cmdlineFile)
+		if err != nil {
+			continue
+		}
+
+		cmdline := string(cmdlineData)
+		for _, searchName := range searchNames {
+			if strings.Contains(cmdline, searchName) {
+				if pid, err := strconv.Atoi(pidStr); err == nil {
+					return pid
+				}
+			}
+		}
+	}
+
+	return 0
+}
+
+// isServiceProcess checks if a process is the expected service process
+func (m *Manager) isServiceProcess(pid int, serviceName string) bool {
+	cmdlineFile := fmt.Sprintf("/proc/%d/cmdline", pid)
+	cmdlineData, err := os.ReadFile(cmdlineFile)
+	if err != nil {
+		return false
+	}
+
+	cmdline := string(cmdlineData)
+	switch serviceName {
+	case "postgresql":
+		return strings.Contains(cmdline, "postgres")
+	case "nats":
+		return strings.Contains(cmdline, "nats-server")
+	case "seaweedfs":
+		return strings.Contains(cmdline, "weed")
+	}
+
+	return false
+}
+
+// captureFromFD tries to capture output from a process file descriptor
+func (m *Manager) captureFromFD(process *Process, pid int, fd int, fdName string) {
+	fdPath := fmt.Sprintf("/proc/%d/fd/%d", pid, fd)
+	
+	// Try to open the file descriptor (this may not work for all processes)
+	file, err := os.Open(fdPath)
+	if err != nil {
+		// This is expected for many processes, so don't log as error
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		select {
+		case <-m.ctx.Done():
+			return
+		default:
+			line := strings.TrimSpace(scanner.Text())
+			// Skip empty lines and whitespace-only lines
+			if line != "" && m.logManager != nil {
+				level := logger.LogLevelInfo
+				if fdName == "stderr" {
+					level = logger.LogLevelError
+				}
+				m.logManager.WriteLog(process.Name, level, line)
+			}
+		}
+	}
 }

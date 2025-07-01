@@ -473,3 +473,119 @@ func IsSetupCompleted() (bool, error) {
 	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM system_config WHERE config_key = 'setup_completed')").Scan(&exists)
 	return exists, err
 }
+
+// CreateInitialData 초기 데이터를 생성합니다
+func CreateInitialData() error {
+	// 기본 조직 생성 (존재하지 않는 경우만)
+	var orgExists bool
+	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM organizations LIMIT 1)").Scan(&orgExists)
+	if err != nil {
+		return err
+	}
+
+	if !orgExists {
+		_, err = DB.Exec(`
+			INSERT INTO organizations (org_id, name) 
+			VALUES ('00000000-0000-4000-8000-000000000000', 'Default Organization')
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create default organization: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// CreateSystemMetricsTarget 시스템 메트릭용 타겟을 생성합니다
+func CreateSystemMetricsTarget() error {
+	systemMetricsUUID := "00000000-0000-4000-8000-000000000001"
+	defaultOrgUUID := "00000000-0000-4000-8000-000000000000"
+
+	// 시스템 메트릭 타겟 생성 (존재하지 않는 경우만)
+	var targetExists bool
+	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM target WHERE target_id = $1)", systemMetricsUUID).Scan(&targetExists)
+	if err != nil {
+		return err
+	}
+
+	if !targetExists {
+		_, err = DB.Exec(`
+			INSERT INTO target (target_id, name) 
+			VALUES ($1, 'System Metrics')
+		`, systemMetricsUUID)
+		if err != nil {
+			return fmt.Errorf("failed to create system metrics target: %v", err)
+		}
+
+		// 기본 스키마가 없으면 생성
+		_, err = DB.Exec(`
+			INSERT INTO category_schemas (org_id, category_name, version, schema_definition, is_active)
+			VALUES ($1, 'metrics', 1, '{"type": "object", "fields": {"cpu_usage": {"type": "number"}, "memory_usage": {"type": "number"}, "disk_usage": {"type": "number"}, "network_io": {"type": "number"}}}', true)
+			ON CONFLICT (org_id, category_name, version) DO NOTHING
+		`, defaultOrgUUID)
+		if err != nil {
+			return fmt.Errorf("failed to create metrics schema: %v", err)
+		}
+
+		// 타겟-카테고리 매핑 생성
+		_, err = DB.Exec(`
+			INSERT INTO target_categories (target_id, org_id, category_name, schema_version, category_data) 
+			VALUES ($1, $2, 'metrics', 1, '{"description": "System metrics collection target"}')
+			ON CONFLICT (target_id, category_name) DO NOTHING
+		`, systemMetricsUUID, defaultOrgUUID)
+		if err != nil {
+			return fmt.Errorf("failed to create system metrics target category: %v", err)
+		}
+
+		log.Println("✅ System metrics target created successfully")
+	}
+
+	return nil
+}
+
+// InitializeCompleteSchema 데이터베이스 스키마를 완전히 초기화합니다
+func InitializeCompleteSchema() error {
+	if DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+
+	log.Println("Initializing database schema...")
+
+	// 스키마 생성
+	if _, err := DB.Exec(schemaSQL); err != nil {
+		return fmt.Errorf("failed to create schema: %v", err)
+	}
+
+	// 트리거 생성
+	if _, err := DB.Exec(triggersSQL); err != nil {
+		return fmt.Errorf("failed to create triggers: %v", err)
+	}
+
+	// TimescaleDB 하이퍼테이블 생성
+	if _, err := DB.Exec(timescaleSQL); err != nil {
+		return fmt.Errorf("failed to create TimescaleDB hypertables: %v", err)
+	}
+
+	// 데이터베이스 함수 생성
+	if _, err := DB.Exec(functionsSQL); err != nil {
+		return fmt.Errorf("failed to create database functions: %v", err)
+	}
+
+	// 초기 데이터 생성
+	if err := CreateInitialData(); err != nil {
+		return fmt.Errorf("failed to create initial data: %v", err)
+	}
+
+	// 시스템 메트릭용 타겟 생성
+	if err := CreateSystemMetricsTarget(); err != nil {
+		return fmt.Errorf("failed to create system metrics target: %v", err)
+	}
+
+	// 기본 사용자 생성
+	if err := CreateDefaultUsers(); err != nil {
+		return fmt.Errorf("failed to create default users: %v", err)
+	}
+
+	log.Println("Schema initialization completed successfully")
+	return nil
+}

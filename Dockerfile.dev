@@ -92,13 +92,16 @@ WORKDIR /app
 
 # Copy Go module files to leverage Docker cache
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod tidy
 
 # Set path for any Go binaries we might build inside
 ENV PATH="/app/bin:${GOPATH}/bin:${PATH}"
 
 # Copy application source
 COPY . .
+
+# Ensure all dependencies are properly resolved
+RUN go mod tidy
 
 # Build all necessary binaries
 RUN go build -o /app/bin/supervisor ./cmd/supervisor

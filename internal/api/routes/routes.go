@@ -30,11 +30,35 @@ func SetupRoutes(app *fiber.App, sessionStore *session.Store) {
 
 // setupBasicRoutes는 기본 페이지 라우팅을 설정합니다
 func setupBasicRoutes(app *fiber.App, sessionStore *session.Store) {
-	// 메인 페이지
+	// 메인 페이지 - 초기 설정 상태에 따라 리디렉션
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Render("main", fiber.Map{
-			"Title": "tmiDB Console",
-		})
+		// 초기 설정 완료 여부 확인
+		setupCompleted, err := handlers.CheckSetupStatus()
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Database connection error",
+			})
+		}
+
+		// 초기 설정이 완료되지 않은 경우 setup 페이지로 리디렉션
+		if !setupCompleted {
+			return c.Redirect("/setup")
+		}
+
+		// 초기 설정이 완료된 경우 세션 확인
+		sess, err := sessionStore.Get(c)
+		if err != nil {
+			return c.Redirect("/login")
+		}
+
+		userID := sess.Get("user_id")
+		if userID == nil {
+			// 로그인하지 않은 사용자는 로그인 페이지로
+			return c.Redirect("/login")
+		}
+
+		// 로그인된 사용자는 대시보드로
+		return c.Redirect("/dashboard")
 	})
 
 	// 인증 관련
@@ -50,8 +74,10 @@ func setupBasicRoutes(app *fiber.App, sessionStore *session.Store) {
 
 // setupWebConsoleRoutes는 웹 콘솔 페이지 라우팅을 설정합니다
 func setupWebConsoleRoutes(app *fiber.App, sessionStore *session.Store) {
+
+	
 	// 대시보드 (메인)
-	app.Get("/dashboard", handlers.DashboardPage)
+	app.Get("/dashboard", middleware.AuthRequired(sessionStore), handlers.DashboardPage)
 	
 	// 카테고리 관리
 	app.Get("/categories", middleware.AuthRequired(sessionStore), handlers.CategoriesPage)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/tmidb/tmidb-core/internal/config" // config 패키지 임포트
 
@@ -13,6 +14,11 @@ import (
 
 // 전역 DB 인스턴스
 var DB *sql.DB
+
+// GetDB는 전역 데이터베이스 인스턴스를 반환합니다
+func GetDB() *sql.DB {
+	return DB
+}
 
 // InitDatabase는 데이터베이스 연결을 초기화합니다.
 func InitDatabase(cfg *config.Config) error {
@@ -131,35 +137,8 @@ func connectAsTmiDBUser(cfg *config.Config) error {
 
 // initializeSchema는 데이터베이스 스키마를 초기화합니다.
 func initializeSchema() error {
-	log.Println("Initializing database schema...")
-
-	// 1. 스키마 생성
-	if _, err := DB.Exec(schemaSQL); err != nil {
-		return fmt.Errorf("failed to create schema: %v", err)
-	}
-
-	// 2. 트리거 생성
-	if _, err := DB.Exec(triggersSQL); err != nil {
-		return fmt.Errorf("failed to create triggers: %v", err)
-	}
-
-	// 3. TimescaleDB 하이퍼테이블 생성
-	if _, err := DB.Exec(timescaleSQL); err != nil {
-		log.Printf("Warning: TimescaleDB setup failed (this is OK if TimescaleDB is not installed): %v", err)
-	}
-
-	// 4. 함수들 생성
-	if _, err := DB.Exec(functionsSQL); err != nil {
-		return fmt.Errorf("failed to create functions: %v", err)
-	}
-
-	// 5. 기본 사용자 생성
-	if err := CreateDefaultUsers(); err != nil {
-		return fmt.Errorf("failed to create default users: %v", err)
-	}
-
-	log.Println("Schema initialization completed successfully")
-	return nil
+	// 완전한 스키마 초기화 수행
+	return InitializeCompleteSchema()
 }
 
 // CloseDatabase는 데이터베이스 연결을 종료합니다.
@@ -198,4 +177,37 @@ func Close() {
 // InitializeSchema는 데이터베이스 스키마를 초기화합니다
 func InitializeSchema() error {
 	return initializeSchema()
+}
+
+// ConnectDatabase는 기존 데이터베이스에 연결만 합니다 (초기화 없이)
+func ConnectDatabase(cfg *config.Config) error {
+	// 최대 30초 동안 재시도 (1초 간격으로 30번)
+	maxRetries := 30
+	for i := 0; i < maxRetries; i++ {
+		var err error
+		DB, err = sql.Open("postgres", cfg.DatabaseURL)
+		if err != nil {
+			log.Printf("⏳ Failed to open database connection (attempt %d/%d): %v", i+1, maxRetries, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// 연결 테스트
+		if err := DB.Ping(); err != nil {
+			log.Printf("⏳ Failed to ping database (attempt %d/%d): %v", i+1, maxRetries, err)
+			DB.Close()
+			DB = nil
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// 연결 풀 설정
+		DB.SetMaxOpenConns(25)
+		DB.SetMaxIdleConns(5)
+
+		log.Printf("✅ Connected to database as user '%s' (attempt %d)", cfg.TmiDBUser, i+1)
+		return nil
+	}
+	
+	return fmt.Errorf("failed to connect to database after %d attempts", maxRetries)
 }

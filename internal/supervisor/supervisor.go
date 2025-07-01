@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -171,8 +172,15 @@ func New(config *Config) (*Supervisor, error) {
 
 	// Initialize log manager
 	logManager := logger.NewManager(&logger.LogConfig{
-		BaseDir: config.LogDir,
-		Level:   parseLogLevel(config.LogLevel),
+		BaseDir:       config.LogDir,
+		Level:         parseLogLevel(config.LogLevel),
+		MaxFileSize:   500, // 500MB (더 큰 파일 크기)
+		MaxFiles:      50,  // 더 많은 파일 보관
+		MaxAge:        24 * time.Hour * 30, // 30일 (더 오래 보관)
+		Compress:      false, // 압축 비활성화 (디버깅 용이성)
+		BufferSize:    8192,
+		FlushInterval: 1 * time.Second, // 더 자주 플러시
+		ConsoleOutput: true, // 콘솔 출력 활성화
 	}, ipcServer)
 
 	// Initialize process manager
@@ -190,6 +198,9 @@ func New(config *Config) (*Supervisor, error) {
 		backupProgress:  make(map[string]*BackupProgress),
 		restoreProgress: make(map[string]*RestoreProgress),
 	}
+
+	// Register external service restart callback
+	processManager.SetExternalServiceRestarter(supervisor.restartExternalService)
 
 	// Go 1.24 기능: 자동 정리를 위한 cleanup 등록
 	supervisor.cleanup = runtime.AddCleanup(&supervisor, func(s *Supervisor) {
@@ -223,6 +234,11 @@ func (s *Supervisor) Start() error {
 
 	log.Println("Starting tmiDB Supervisor...")
 
+	// Start log manager
+	if err := s.logManager.Start(); err != nil {
+		return fmt.Errorf("failed to start log manager: %w", err)
+	}
+
 	// Start IPC server
 	if err := s.ipcServer.Start(); err != nil {
 		return fmt.Errorf("failed to start IPC server: %w", err)
@@ -243,9 +259,148 @@ func (s *Supervisor) Start() error {
 		return fmt.Errorf("failed to start internal components: %w", err)
 	}
 
+	// Start periodic stats updater
+	go s.periodicStatsUpdater()
+
 	s.started = true
 	log.Println("tmiDB Supervisor started successfully")
 
+	return nil
+}
+
+// restartExternalService restarts an external service
+func (s *Supervisor) restartExternalService(serviceName string) error {
+	log.Printf("🔄 Restarting external service: %s", serviceName)
+	
+	switch serviceName {
+	case "postgresql":
+		return s.restartPostgreSQL()
+	case "nats":
+		return s.restartNATS()
+	case "seaweedfs":
+		return s.restartSeaweedFS()
+	default:
+		return fmt.Errorf("unknown external service: %s", serviceName)
+	}
+}
+
+// restartPostgreSQL restarts PostgreSQL service
+func (s *Supervisor) restartPostgreSQL() error {
+	log.Println("🔄 Restarting PostgreSQL...")
+	
+	// Stop PostgreSQL
+	cmd := exec.Command("pkill", "-f", "postgres")
+	if err := cmd.Run(); err != nil {
+		log.Printf("⚠️ Failed to stop PostgreSQL: %v", err)
+	}
+	
+	// Wait a moment
+	time.Sleep(2 * time.Second)
+	
+	// Start PostgreSQL again
+	cmd = exec.Command("runuser", "-u", "postgres", "--", "postgres", "-D", "/data/postgresql", "-k", "/var/run/postgresql")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start PostgreSQL: %w", err)
+	}
+	
+	// Update PID file
+	pidFile := "/var/run/postgresql.pid"
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
+		log.Printf("⚠️ Failed to write PostgreSQL PID file: %v", err)
+	}
+	
+	// Wait for PostgreSQL to be ready
+	time.Sleep(3 * time.Second)
+	
+	// Re-attach to the new process
+	if err := s.attachToService("postgresql", pidFile); err != nil {
+		return fmt.Errorf("failed to re-attach to PostgreSQL: %w", err)
+	}
+	
+	log.Println("✅ PostgreSQL restarted successfully")
+	return nil
+}
+
+// restartNATS restarts NATS service
+func (s *Supervisor) restartNATS() error {
+	log.Println("🔄 Restarting NATS...")
+	
+	// Stop NATS
+	cmd := exec.Command("pkill", "-f", "nats-server")
+	if err := cmd.Run(); err != nil {
+		log.Printf("⚠️ Failed to stop NATS: %v", err)
+	}
+	
+	// Wait a moment
+	time.Sleep(2 * time.Second)
+	
+	// Start NATS again
+	cmd = exec.Command("runuser", "-u", "natsuser", "--", "nats-server", "-sd", "/data/nats")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start NATS: %w", err)
+	}
+	
+	// Update PID file
+	pidFile := "/var/run/nats.pid"
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
+		log.Printf("⚠️ Failed to write NATS PID file: %v", err)
+	}
+	
+	// Wait for NATS to be ready
+	time.Sleep(3 * time.Second)
+	
+	// Re-attach to the new process
+	if err := s.attachToService("nats", pidFile); err != nil {
+		return fmt.Errorf("failed to re-attach to NATS: %w", err)
+	}
+	
+	log.Println("✅ NATS restarted successfully")
+	return nil
+}
+
+// restartSeaweedFS restarts SeaweedFS service
+func (s *Supervisor) restartSeaweedFS() error {
+	log.Println("🔄 Restarting SeaweedFS...")
+	
+	// Stop SeaweedFS
+	cmd := exec.Command("pkill", "-f", "weed")
+	if err := cmd.Run(); err != nil {
+		log.Printf("⚠️ Failed to stop SeaweedFS: %v", err)
+	}
+	
+	// Wait a moment
+	time.Sleep(2 * time.Second)
+	
+	// Start SeaweedFS again
+	cmd = exec.Command("runuser", "-u", "seaweeduser", "--", "weed", "master", "-mdir=/data/seaweedfs/master")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start SeaweedFS: %w", err)
+	}
+	
+	// Update PID file
+	pidFile := "/var/run/seaweedfs.pid"
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
+		log.Printf("⚠️ Failed to write SeaweedFS PID file: %v", err)
+	}
+	
+	// Wait for SeaweedFS to be ready
+	time.Sleep(3 * time.Second)
+	
+	// Re-attach to the new process
+	if err := s.attachToService("seaweedfs", pidFile); err != nil {
+		return fmt.Errorf("failed to re-attach to SeaweedFS: %w", err)
+	}
+	
+	log.Println("✅ SeaweedFS restarted successfully")
 	return nil
 }
 
@@ -516,6 +671,24 @@ func (s *Supervisor) updateProcessStats() {
 	s.processManager.UpdateProcessStats(s.getProcessMemoryUsage, s.getProcessCPUUsage, s.getServiceStatus, s.getServicePID)
 }
 
+// periodicStatsUpdater runs in background to update process statistics periodically
+func (s *Supervisor) periodicStatsUpdater() {
+	ticker := time.NewTicker(10 * time.Second) // 10초마다 업데이트
+	defer ticker.Stop()
+	
+	log.Println("📊 Started periodic process stats updater (every 10 seconds)")
+	
+	for {
+		select {
+		case <-ticker.C:
+			s.updateProcessStats()
+		case <-s.ctx.Done():
+			log.Println("📊 Stopping periodic process stats updater")
+			return
+		}
+	}
+}
+
 // getServicePID gets the main PID of a systemd service
 func (s *Supervisor) getServicePID(serviceName string) int {
 	// 컨테이너 환경에서는 systemctl을 사용하지 않음
@@ -714,9 +887,18 @@ func (s *Supervisor) handleGetLogs(conn *ipc.Connection, msg *ipc.Message) *ipc.
 		lines = int(l)
 	}
 
-	// Read recent logs from file
-	logFile := fmt.Sprintf("%s/%s.log", s.config.LogDir, component)
-	logs, err := s.readRecentLogs(logFile, lines)
+	var logs []ipc.LogEntry
+	var err error
+
+	if component == "all" {
+		// Read logs from all components
+		logs, err = s.readAllComponentLogs(lines)
+	} else {
+		// Read logs from specific component directory
+		logDir := fmt.Sprintf("%s/%s", s.config.LogDir, component)
+		logs, err = s.readRecentLogsFromDir(logDir, component, lines)
+	}
+
 	if err != nil {
 		return ipc.NewResponse(msg.ID, false, nil, fmt.Sprintf("failed to read logs: %v", err))
 	}
@@ -753,74 +935,156 @@ func (s *Supervisor) handleLogStream(conn *ipc.Connection, msg *ipc.Message) *ip
 	}
 }
 
-// streamLogsToConnection streams logs to a specific connection
+// streamLogsToConnection streams logs to a specific connection by tailing log files
 func (s *Supervisor) streamLogsToConnection(component string, logChan chan<- ipc.LogEntry) {
-	// This would be implemented to tail log files and send entries to the channel
-	// For now, we'll send a simple message
+	logDir := fmt.Sprintf("%s/%s", s.config.LogDir, component)
+	logFile := fmt.Sprintf("%s/%s.log", logDir, component)
+
+	// Check if log file exists
+	if _, err := os.Stat(logFile); os.IsNotExist(err) {
+		log.Printf("⚠️ Log file not found for %s: %s", component, logFile)
+		return
+	}
+
+	// Simple file tailing implementation
+	file, err := os.Open(logFile)
+	if err != nil {
+		log.Printf("❌ Failed to open log file for %s: %v", component, err)
+		return
+	}
+	defer file.Close()
+
+	// Start from the end of file
+	if stat, err := file.Stat(); err == nil {
+		file.Seek(stat.Size(), 0)
+	}
+
+	reader := bufio.NewReader(file)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
-			entry := ipc.LogEntry{
-				Process:   component,
-				Level:     "INFO",
-				Message:   fmt.Sprintf("Sample log message from %s", component),
-				Timestamp: time.Now(),
-			}
-			select {
-			case logChan <- entry:
-			default:
-				// Channel is full, skip
-			}
 		case <-s.ctx.Done():
 			return
+		case <-ticker.C:
+			// Read new lines
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					if err == io.EOF {
+						break // No more data, wait for next tick
+					}
+					log.Printf("❌ Error reading log file for %s: %v", component, err)
+					return
+				}
+
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+
+				// Parse JSON log entry
+				var entry ipc.LogEntry
+				if err := json.Unmarshal([]byte(line), &entry); err == nil {
+					select {
+					case logChan <- entry:
+					default:
+						// Channel is full, skip
+					}
+				}
+			}
 		}
 	}
 }
 
-// readRecentLogs reads recent log entries from a file
-func (s *Supervisor) readRecentLogs(filename string, lines int) ([]ipc.LogEntry, error) {
+// readRecentLogsFromDir reads recent log entries from component directory
+func (s *Supervisor) readRecentLogsFromDir(logDir, component string, lines int) ([]ipc.LogEntry, error) {
+	// Try to read from multiple log files (current + rotated)
+	var allEntries []ipc.LogEntry
+	
+	// Read from current log file first
+	currentFile := fmt.Sprintf("%s/%s.log", logDir, component)
+	if entries, err := s.readLogFile(currentFile); err == nil {
+		allEntries = append(allEntries, entries...)
+	}
+
+	// Read from rotated log files (.0.log, .1.log, etc.)
+	for i := 0; i < 10; i++ { // Check up to 10 rotated files
+		rotatedFile := fmt.Sprintf("%s/%s.%d.log", logDir, component, i)
+		if entries, err := s.readLogFile(rotatedFile); err == nil {
+			// Prepend rotated entries (they are older)
+			allEntries = append(entries, allEntries...)
+		} else {
+			break // No more rotated files
+		}
+	}
+
+	// Sort by timestamp (newest first)
+	sort.Slice(allEntries, func(i, j int) bool {
+		return allEntries[i].Timestamp.After(allEntries[j].Timestamp)
+	})
+
+	// Return only the requested number of lines
+	if len(allEntries) > lines {
+		allEntries = allEntries[:lines]
+	}
+
+	return allEntries, nil
+}
+
+// readLogFile reads log entries from a single file
+func (s *Supervisor) readLogFile(filename string) ([]ipc.LogEntry, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []ipc.LogEntry{}, nil // 로그 파일이 없으면 빈 목록 반환
-		}
-		return nil, fmt.Errorf("could not open log file: %w", err)
+		return nil, err
 	}
 	defer file.Close()
 
-	var fileLines []string
+	var entries []ipc.LogEntry
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		fileLines = append(fileLines, scanner.Text())
-	}
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading log file: %w", err)
-	}
-
-	start := len(fileLines) - lines
-	if start < 0 {
-		start = 0
-	}
-	recentLogLines := fileLines[start:]
-
-	var entries []ipc.LogEntry
-	for _, line := range recentLogLines {
 		var entry ipc.LogEntry
 		if err := json.Unmarshal([]byte(line), &entry); err == nil {
 			entries = append(entries, entry)
 		}
 	}
 
-	// 최신 로그가 위로 오도록 순서 뒤집기
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 
 	return entries, nil
+}
+
+// readAllComponentLogs reads recent logs from all components
+func (s *Supervisor) readAllComponentLogs(lines int) ([]ipc.LogEntry, error) {
+	components := []string{"api", "data-manager", "data-consumer", "postgresql", "nats", "seaweedfs"}
+	var allEntries []ipc.LogEntry
+
+	for _, component := range components {
+		logDir := fmt.Sprintf("%s/%s", s.config.LogDir, component)
+		if entries, err := s.readRecentLogsFromDir(logDir, component, lines/len(components)+10); err == nil {
+			allEntries = append(allEntries, entries...)
+		}
+	}
+
+	// Sort by timestamp (newest first)
+	sort.Slice(allEntries, func(i, j int) bool {
+		return allEntries[i].Timestamp.After(allEntries[j].Timestamp)
+	})
+
+	// Return only the requested number of lines
+	if len(allEntries) > lines {
+		allEntries = allEntries[:lines]
+	}
+
+	return allEntries, nil
 }
 
 // handleGetProcessList handles get process list requests

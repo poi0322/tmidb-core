@@ -27,7 +27,7 @@ func LoginPage(c *fiber.Ctx) error {
 	}
 
 	return c.Render("login.html", fiber.Map{
-		"title": "Login",
+		"Title": "Login",
 		"error": errMsg,
 	})
 }

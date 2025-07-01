@@ -144,6 +144,9 @@ var logsStatusCmd = &cobra.Command{
 	Long:  "Display which components have logging enabled or disabled",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("📊 Component Log Status:")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Printf("%-18s │ %-15s │ %-20s\n", "COMPONENT", "LOG STATUS", "DESCRIPTION")
+		fmt.Println("──────────────────┼─────────────────┼────────────────────")
 
 		status, err := client.GetLogStatus()
 		if err != nil {
@@ -151,13 +154,25 @@ var logsStatusCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		for component, enabled := range status {
-			statusIcon := "🔇 Disabled"
-			if enabled {
-				statusIcon = "🔊 Enabled"
+		// 정렬된 순서로 출력
+		components := []string{"postgresql", "nats", "seaweedfs", "api", "data-manager", "data-consumer"}
+		for _, component := range components {
+			if enabled, exists := status[component]; exists {
+				var statusIcon, statusText, description string
+				if enabled {
+					statusIcon = "🔊"
+					statusText = "Enabled"
+					description = "Logging active"
+				} else {
+					statusIcon = "🔇"
+					statusText = "Disabled"
+					description = "Logging paused"
+				}
+				fmt.Printf("%-18s │ %s %-12s │ %-20s\n", component, statusIcon, statusText, description)
 			}
-			fmt.Printf("  %-15s: %s\n", component, statusIcon)
 		}
+		
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 }
 

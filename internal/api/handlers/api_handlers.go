@@ -26,7 +26,7 @@ func categoryFromParams(c *fiber.Ctx) string {
 }
 
 // GetCategorySchema는 카테고리 스키마를 조회합니다.
-func GetCategorySchema(c *fiber.Ctx) error {
+func GetCategorySchemaLegacy(c *fiber.Ctx) error {
 	version := c.Locals("version").(string)
 	category := c.Params("category")
 
@@ -58,7 +58,7 @@ func GetCategorySchema(c *fiber.Ctx) error {
 }
 
 // GetTargetByID는 특정 대상을 조회합니다.
-func GetTargetByID(c *fiber.Ctx) error {
+func GetTargetByIDLegacy(c *fiber.Ctx) error {
 	version := c.Locals("version").(string)
 	category := c.Params("category")
 	targetID := c.Params("target_id")
@@ -98,8 +98,8 @@ func GetTargetByID(c *fiber.Ctx) error {
 	})
 }
 
-// GetCategoryData는 카테고리 데이터를 조회합니다.
-func GetCategoryData(c *fiber.Ctx) error {
+// GetCategoryDataLegacy는 레거시 카테고리 데이터 조회 API입니다.
+func GetCategoryDataLegacy(c *fiber.Ctx) error {
 	version := c.Locals("version").(string)
 	category := c.Params("category")
 
@@ -181,7 +181,7 @@ func GetCategoryData(c *fiber.Ctx) error {
 }
 
 // GetMultiListenerData는 다중 리스너 데이터를 조회합니다.
-func GetMultiListenerData(c *fiber.Ctx) error {
+func GetMultiListenerDataLegacy(c *fiber.Ctx) error {
 	version := c.Locals("version").(string)
 
 	// URL 경로에서 리스너 ID 목록 추출
@@ -256,7 +256,7 @@ func GetMultiListenerData(c *fiber.Ctx) error {
 }
 
 // GetSingleListenerData는 단일 리스너 데이터를 조회합니다.
-func GetSingleListenerData(c *fiber.Ctx) error {
+func GetSingleListenerDataLegacy(c *fiber.Ctx) error {
 	version := c.Locals("version").(string)
 	listenerID := c.Params("listener_id")
 	var categoryName string // 인증 및 응답에 사용할 변수

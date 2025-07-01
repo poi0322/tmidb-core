@@ -2,41 +2,36 @@ package migration
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 	"time"
-
-	"github.com/dop251/goja"
-	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 )
 
 // Migration은 단일 마이그레이션을 나타냅니다
 type Migration struct {
-	ID          int       `json:"id" db:"id"`
-	Name        string    `json:"name" db:"name"`
-	Description string    `json:"description" db:"description"`
-	Category    string    `json:"category" db:"category"`
-	Version     string    `json:"version" db:"version"`
-	SQL         string    `json:"sql,omitempty" db:"sql"`
-	Script      string    `json:"script,omitempty" db:"script"`
-	Type        string    `json:"type" db:"type"` // "sql" or "script"
-	Status      string    `json:"status" db:"status"`
-	Error       string    `json:"error,omitempty" db:"error"`
+	ID          int        `json:"id" db:"id"`
+	Name        string     `json:"name" db:"name"`
+	Description string     `json:"description" db:"description"`
+	Category    string     `json:"category" db:"category"`
+	Version     string     `json:"version" db:"version"`
+	SQL         string     `json:"sql,omitempty" db:"sql"`
+	Script      string     `json:"script,omitempty" db:"script"`
+	Type        string     `json:"type" db:"type"` // "sql" or "script"
+	Status      string     `json:"status" db:"status"`
+	Error       string     `json:"error,omitempty" db:"error"`
 	ExecutedAt  *time.Time `json:"executed_at,omitempty" db:"executed_at"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 }
 
 // MigrationResult는 마이그레이션 실행 결과를 나타냅니다
 type MigrationResult struct {
-	Success   bool              `json:"success"`
-	Error     string            `json:"error,omitempty"`
-	Output    string            `json:"output,omitempty"`
-	Changes   int               `json:"changes"`
-	Duration  time.Duration     `json:"duration"`
-	Details   map[string]interface{} `json:"details,omitempty"`
+	Success  bool                   `json:"success"`
+	Error    string                 `json:"error,omitempty"`
+	Output   string                 `json:"output,omitempty"`
+	Changes  int                    `json:"changes"`
+	Duration time.Duration          `json:"duration"`
+	Details  map[string]interface{} `json:"details,omitempty"`
 }
 
 // MigrationManager는 마이그레이션을 관리합니다
@@ -192,7 +187,7 @@ func (m *MigrationManager) GetMigrationByID(id int) (*Migration, error) {
 
 	err := m.db.QueryRow(query, id).Scan(
 		&migration.ID, &migration.Name, &migration.Description,
-		&migration.Category, &migration.Version, &migration.SQL, 
+		&migration.Category, &migration.Version, &migration.SQL,
 		&migration.Script, &migration.Type, &migration.Status,
 		&migration.Error, &migration.ExecutedAt, &migration.CreatedAt,
 	)
@@ -311,115 +306,9 @@ func (m *MigrationManager) executeSQLMigration(tx *sql.Tx, migration *Migration)
 func (m *MigrationManager) executeScriptMigration(tx *sql.Tx, migration *Migration) *MigrationResult {
 	result := &MigrationResult{Details: make(map[string]interface{})}
 
-	// goja VM 생성
-	vm := goja.New()
-
-	var scriptOutput []string
-	var totalChanges int
-
-	// DB 접근을 위한 함수들 제공
-	vm.Set("log", func(message string) {
-		scriptOutput = append(scriptOutput, fmt.Sprintf("[LOG] %s", message))
-		log.Printf("마이그레이션 스크립트 로그: %s", message)
-	})
-
-	vm.Set("exec", func(query string, args ...interface{}) map[string]interface{} {
-		res, err := tx.Exec(query, args...)
-		if err != nil {
-			return map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-			}
-		}
-
-		rowsAffected, _ := res.RowsAffected()
-		totalChanges += int(rowsAffected)
-
-		scriptOutput = append(scriptOutput, fmt.Sprintf("[EXEC] %d행 영향: %s", rowsAffected, query))
-		return map[string]interface{}{
-			"success":       true,
-			"rows_affected": rowsAffected,
-		}
-	})
-
-	vm.Set("query", func(query string, args ...interface{}) map[string]interface{} {
-		rows, err := tx.Query(query, args...)
-		if err != nil {
-			return map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-			}
-		}
-		defer rows.Close()
-
-		// 컬럼 정보 가져오기
-		columns, err := rows.Columns()
-		if err != nil {
-			return map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-			}
-		}
-
-		// 결과 수집
-		var results []map[string]interface{}
-		for rows.Next() {
-			values := make([]interface{}, len(columns))
-			valuePtrs := make([]interface{}, len(columns))
-			for i := range values {
-				valuePtrs[i] = &values[i]
-			}
-
-			if err := rows.Scan(valuePtrs...); err != nil {
-				return map[string]interface{}{
-					"success": false,
-					"error":   err.Error(),
-				}
-			}
-
-			rowMap := make(map[string]interface{})
-			for i, col := range columns {
-				val := values[i]
-				if b, ok := val.([]byte); ok {
-					rowMap[col] = string(b)
-				} else {
-					rowMap[col] = val
-				}
-			}
-			results = append(results, rowMap)
-		}
-
-		scriptOutput = append(scriptOutput, fmt.Sprintf("[QUERY] %d행 조회: %s", len(results), query))
-		return map[string]interface{}{
-			"success": true,
-			"rows":    results,
-			"count":   len(results),
-		}
-	})
-
-	// 현재 시간, 마이그레이션 정보 등 제공
-	vm.Set("now", time.Now())
-	vm.Set("migration", map[string]interface{}{
-		"id":          migration.ID,
-		"name":        migration.Name,
-		"category":    migration.Category,
-		"version":     migration.Version,
-		"description": migration.Description,
-	})
-
-	// 스크립트 실행
-	_, err := vm.RunString(migration.Script)
-	if err != nil {
-		result.Error = fmt.Sprintf("스크립트 실행 실패: %v", err)
-		return result
-	}
-
-	result.Success = true
-	result.Changes = totalChanges
-	result.Output = strings.Join(scriptOutput, "\n")
-	result.Details["migration_type"] = "JavaScript"
-	result.Details["vm_engine"] = "goja"
-
+	// TODO: JavaScript 마이그레이션 기능은 현재 비활성화됨
+	// goja 패키지 의존성 추가 후 활성화 예정
+	result.Error = "JavaScript 마이그레이션 기능은 현재 지원되지 않습니다"
 	return result
 }
 
@@ -478,13 +367,17 @@ func (m *MigrationManager) GetMigrationStats() (map[string]interface{}, error) {
 		COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
 	FROM migrations`
 
-	err := m.db.QueryRow(query).Scan(
-		&stats["total"], &stats["pending"], &stats["running"],
-		&stats["completed"], &stats["failed"],
-	)
+	var total, pending, running, completed, failed int
+	err := m.db.QueryRow(query).Scan(&total, &pending, &running, &completed, &failed)
 	if err != nil {
 		return nil, fmt.Errorf("통계 조회 실패: %v", err)
 	}
+
+	stats["total"] = total
+	stats["pending"] = pending
+	stats["running"] = running
+	stats["completed"] = completed
+	stats["failed"] = failed
 
 	// 카테고리별 카운트
 	categoryQuery := "SELECT category, COUNT(*) FROM migrations GROUP BY category ORDER BY category"
@@ -506,4 +399,4 @@ func (m *MigrationManager) GetMigrationStats() (map[string]interface{}, error) {
 	stats["categories"] = categories
 
 	return stats, nil
-} 
+}

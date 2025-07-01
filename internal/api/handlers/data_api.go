@@ -25,12 +25,12 @@ func InitDataCache() {
 
 // StandardResponse는 표준화된 API 응답 형식입니다
 type StandardResponse struct {
-	Success    bool        `json:"success"`
-	Data       interface{} `json:"data,omitempty"`
-	Meta       *Meta       `json:"meta,omitempty"`
-	Error      *ApiError   `json:"error,omitempty"`
-	Timestamp  time.Time   `json:"timestamp"`
-	RequestID  string      `json:"request_id,omitempty"`
+	Success   bool        `json:"success"`
+	Data      interface{} `json:"data,omitempty"`
+	Meta      *Meta       `json:"meta,omitempty"`
+	Error     *ApiError   `json:"error,omitempty"`
+	Timestamp time.Time   `json:"timestamp"`
+	RequestID string      `json:"request_id,omitempty"`
 }
 
 // Meta는 메타데이터 정보입니다
@@ -59,9 +59,9 @@ type VersionMeta struct {
 
 // QueryMeta는 쿼리 메타데이터입니다
 type QueryMeta struct {
-	Filters      []string `json:"filters,omitempty"`
-	ProcessTime  string   `json:"process_time,omitempty"`
-	CacheHit     bool     `json:"cache_hit,omitempty"`
+	Filters     []string `json:"filters,omitempty"`
+	ProcessTime string   `json:"process_time,omitempty"`
+	CacheHit    bool     `json:"cache_hit,omitempty"`
 }
 
 // ApiError는 표준화된 에러 형식입니다
@@ -73,37 +73,37 @@ type ApiError struct {
 
 // CategoryData는 카테고리 데이터 구조입니다
 type CategoryData struct {
-	TargetID      string                 `json:"target_id"`
-	Category      string                 `json:"category"`
-	Version       string                 `json:"version"`
-	Data          map[string]interface{} `json:"data"`
-	CreatedAt     time.Time              `json:"created_at"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+	TargetID  string                 `json:"target_id"`
+	Category  string                 `json:"category"`
+	Version   string                 `json:"version"`
+	Data      map[string]interface{} `json:"data"`
+	CreatedAt time.Time              `json:"created_at"`
+	UpdatedAt time.Time              `json:"updated_at"`
 }
 
 // GetCategoryData는 카테고리별 데이터를 조회합니다
 func GetCategoryData(c *fiber.Ctx) error {
 	startTime := time.Now()
-	
+
 	// 컨텍스트 정보 가져오기
 	versionCtx := middleware.GetVersionContext(c)
 	paginationCtx := middleware.GetPaginationContext(c)
-	
+
 	category := c.Params("category")
 	orgID, err := middleware.GetOrgIDFromToken(c)
 	if err != nil {
-		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), "")
 	}
 
 	// 쿼리 파라미터 파싱
 	queryFilters, err := parseQueryFilters(c)
 	if err != nil {
-		return sendErrorResponse(c, "QUERY_PARSE_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "QUERY_PARSE_ERROR", err.Error(), "")
 	}
 
 	// 캐시 키 생성
-	cacheKey := fmt.Sprintf("category:%s:org:%d:v:%s:page:%d:size:%d:filters:%v", 
-		category, orgID, versionCtx.RequestedVersion, 
+	cacheKey := fmt.Sprintf("category:%s:org:%d:v:%s:page:%d:size:%d:filters:%v",
+		category, orgID, versionCtx.RequestedVersion,
 		paginationCtx.Page, paginationCtx.PageSize, queryFilters)
 
 	var data []CategoryData
@@ -114,9 +114,9 @@ func GetCategoryData(c *fiber.Ctx) error {
 	if dataCache != nil {
 		type CachedResult struct {
 			Data       []CategoryData `json:"data"`
-			TotalCount int           `json:"total_count"`
+			TotalCount int            `json:"total_count"`
 		}
-		
+
 		var cached CachedResult
 		if dataCache.GetJSON(cacheKey, &cached) {
 			data = cached.Data
@@ -129,14 +129,14 @@ func GetCategoryData(c *fiber.Ctx) error {
 	if !cacheHit {
 		data, totalCount, err = getCategoryDataFromDB(orgID, category, versionCtx, paginationCtx, queryFilters)
 		if err != nil {
-			return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), nil)
+			return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), "")
 		}
 
 		// 결과를 캐시에 저장 (TTL: 3분)
 		if dataCache != nil {
 			cachedResult := struct {
 				Data       []CategoryData `json:"data"`
-				TotalCount int           `json:"total_count"`
+				TotalCount int            `json:"total_count"`
 			}{
 				Data:       data,
 				TotalCount: totalCount,
@@ -173,23 +173,23 @@ func GetCategoryData(c *fiber.Ctx) error {
 // GetTargetByID는 특정 타겟의 카테고리 데이터를 조회합니다
 func GetTargetByID(c *fiber.Ctx) error {
 	startTime := time.Now()
-	
+
 	targetID := c.Params("target_id")
 	category := c.Params("category")
 	versionCtx := middleware.GetVersionContext(c)
 	orgID, err := middleware.GetOrgIDFromToken(c)
 	if err != nil {
-		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), "")
 	}
 
 	// 단일 타겟 데이터 조회
 	data, err := getTargetDataFromDB(orgID, targetID, category, versionCtx)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return sendErrorResponse(c, "TARGET_NOT_FOUND", 
-				fmt.Sprintf("Target %s not found in category %s", targetID, category), nil)
+			return sendErrorResponse(c, "TARGET_NOT_FOUND",
+				fmt.Sprintf("Target %s not found in category %s", targetID, category), "")
 		}
-		return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), "")
 	}
 
 	meta := &Meta{
@@ -212,7 +212,7 @@ func CreateOrUpdateTargetData(c *fiber.Ctx) error {
 	category := c.Params("category")
 	orgID, err := middleware.GetOrgIDFromToken(c)
 	if err != nil {
-		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), "")
 	}
 
 	// 요청 본문 파싱
@@ -232,17 +232,17 @@ func CreateOrUpdateTargetData(c *fiber.Ctx) error {
 	// 카테고리 스키마 검증
 	schemaValid, err := validateCategorySchema(orgID, category, version, requestData)
 	if err != nil {
-		return sendErrorResponse(c, "SCHEMA_VALIDATION_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "SCHEMA_VALIDATION_ERROR", err.Error(), "")
 	}
 	if !schemaValid {
-		return sendErrorResponse(c, "SCHEMA_VALIDATION_FAILED", 
-			"Data does not match category schema", nil)
+		return sendErrorResponse(c, "SCHEMA_VALIDATION_FAILED",
+			"Data does not match category schema", "")
 	}
 
 	// 데이터 저장
 	err = saveTargetData(orgID, targetID, category, version, requestData)
 	if err != nil {
-		return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), "")
 	}
 
 	// 캐시 무효화 (데이터 변경 시)
@@ -269,18 +269,18 @@ func DeleteTargetData(c *fiber.Ctx) error {
 	category := c.Params("category")
 	orgID, err := middleware.GetOrgIDFromToken(c)
 	if err != nil {
-		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "AUTH_ERROR", err.Error(), "")
 	}
 
 	// 삭제 실행
 	rowsAffected, err := deleteTargetData(orgID, targetID, category)
 	if err != nil {
-		return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), nil)
+		return sendErrorResponse(c, "DATABASE_ERROR", err.Error(), "")
 	}
 
 	if rowsAffected == 0 {
 		return sendErrorResponse(c, "TARGET_NOT_FOUND",
-			fmt.Sprintf("Target %s not found in category %s", targetID, category), nil)
+			fmt.Sprintf("Target %s not found in category %s", targetID, category), "")
 	}
 
 	// 캐시 무효화 (데이터 삭제 시)
@@ -290,9 +290,9 @@ func DeleteTargetData(c *fiber.Ctx) error {
 	}
 
 	return sendSuccessResponse(c, fiber.Map{
-		"target_id": targetID,
-		"category":  category,
-		"deleted":   true,
+		"target_id":  targetID,
+		"category":   category,
+		"deleted":    true,
 		"deleted_at": time.Now(),
 	}, nil)
 }
@@ -300,11 +300,11 @@ func DeleteTargetData(c *fiber.Ctx) error {
 // 헬퍼 함수들
 
 // getCategoryDataFromDB는 데이터베이스에서 카테고리 데이터를 조회합니다
-func getCategoryDataFromDB(orgID int, category string, versionCtx *middleware.VersionContext, 
+func getCategoryDataFromDB(orgID int, category string, versionCtx *middleware.VersionContext,
 	paginationCtx *middleware.PaginationContext, filters []string) ([]CategoryData, int, error) {
-	
+
 	db := database.GetDB()
-	
+
 	// COUNT 쿼리 (총 개수)
 	countQuery := buildCountQuery(category, versionCtx, filters)
 	var totalCount int
@@ -315,7 +315,7 @@ func getCategoryDataFromDB(orgID int, category string, versionCtx *middleware.Ve
 
 	// 데이터 조회 쿼리
 	dataQuery := buildDataQuery(category, versionCtx, paginationCtx, filters)
-	
+
 	offset := (paginationCtx.Page - 1) * paginationCtx.PageSize
 	rows, err := db.Query(dataQuery, orgID, paginationCtx.PageSize, offset)
 	if err != nil {
@@ -328,8 +328,8 @@ func getCategoryDataFromDB(orgID int, category string, versionCtx *middleware.Ve
 		var item CategoryData
 		var dataJSON string
 		var createdAt, updatedAt time.Time
-		
-		err := rows.Scan(&item.TargetID, &item.Category, &item.Version, 
+
+		err := rows.Scan(&item.TargetID, &item.Category, &item.Version,
 			&dataJSON, &createdAt, &updatedAt)
 		if err != nil {
 			continue
@@ -339,7 +339,7 @@ func getCategoryDataFromDB(orgID int, category string, versionCtx *middleware.Ve
 		if err := json.Unmarshal([]byte(dataJSON), &item.Data); err != nil {
 			continue
 		}
-		
+
 		item.CreatedAt = createdAt
 		item.UpdatedAt = updatedAt
 		results = append(results, item)
@@ -349,15 +349,15 @@ func getCategoryDataFromDB(orgID int, category string, versionCtx *middleware.Ve
 }
 
 // getTargetDataFromDB는 특정 타겟의 데이터를 조회합니다
-func getTargetDataFromDB(orgID int, targetID, category string, 
+func getTargetDataFromDB(orgID int, targetID, category string,
 	versionCtx *middleware.VersionContext) (*CategoryData, error) {
-	
+
 	db := database.GetDB()
-	
+
 	// 버전별 쿼리 구성
 	var query string
 	var args []interface{}
-	
+
 	if versionCtx.RequestedVersion == "all" {
 		// 모든 버전 조회
 		query = `
@@ -391,17 +391,17 @@ func getTargetDataFromDB(orgID int, targetID, category string,
 	var result CategoryData
 	var dataJSON string
 	var schemaVersion int
-	
+
 	err := db.QueryRow(query, args...).Scan(
-		&result.TargetID, &result.Category, &schemaVersion, 
+		&result.TargetID, &result.Category, &schemaVersion,
 		&dataJSON, &result.CreatedAt, &result.UpdatedAt)
-	
+
 	if err != nil {
 		return nil, err
 	}
 
 	result.Version = strconv.Itoa(schemaVersion)
-	
+
 	// JSON 데이터 파싱
 	if err := json.Unmarshal([]byte(dataJSON), &result.Data); err != nil {
 		return nil, err
@@ -421,14 +421,14 @@ func sendSuccessResponse(c *fiber.Ctx, data interface{}, meta *Meta) error {
 		Timestamp: time.Now(),
 		RequestID: c.Get("X-Request-ID", generateRequestID()),
 	}
-	
+
 	return c.JSON(response)
 }
 
 // sendErrorResponse는 에러 응답을 전송합니다
 func sendErrorResponse(c *fiber.Ctx, code, message, details string) error {
 	response := StandardResponse{
-		Success:   false,
+		Success: false,
 		Error: &ApiError{
 			Code:    code,
 			Message: message,
@@ -437,7 +437,7 @@ func sendErrorResponse(c *fiber.Ctx, code, message, details string) error {
 		Timestamp: time.Now(),
 		RequestID: c.Get("X-Request-ID", generateRequestID()),
 	}
-	
+
 	statusCode := getStatusCodeFromErrorCode(code)
 	return c.Status(statusCode).JSON(response)
 }
@@ -463,4 +463,4 @@ func getStatusCodeFromErrorCode(code string) int {
 	default:
 		return 500
 	}
-} 
+}

@@ -13,7 +13,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/session"
 	"github.com/gofiber/template/html/v2"
-	
+	"github.com/tmidb/tmidb-core/internal/config"
+
 	"github.com/tmidb/tmidb-core/internal/api/handlers"
 	"github.com/tmidb/tmidb-core/internal/api/routes"
 	"github.com/tmidb/tmidb-core/internal/database"
@@ -23,11 +24,23 @@ import (
 func main() {
 	log.Println("🌐 Starting tmiDB API Server...")
 
+	// 설정 로드
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("❌ Failed to load config: %v", err)
+	}
+
 	// 데이터베이스 연결 초기화
-	if err := database.Initialize(); err != nil {
+	if err := database.InitDatabase(cfg); err != nil {
 		log.Fatalf("❌ Failed to initialize database: %v", err)
 	}
 	defer database.Close()
+
+	// 스키마 초기화 (API 서버에서만 수행)
+	if err := database.InitializeSchema(); err != nil {
+		log.Fatalf("❌ Failed to initialize schema: %v", err)
+	}
+	log.Println("🗃️ 데이터베이스 스키마 초기화 완료")
 
 	// 캐시 시스템 초기화
 	handlers.InitDataCache()
@@ -52,7 +65,7 @@ func main() {
 	})
 
 	// 웹 콘솔 템플릿 엔진 초기화
-	engine := html.New("./cmd/api/views", ".html")
+	engine := html.New("/app/cmd/api/views", ".html")
 
 	// Fiber 앱 생성
 	app := fiber.New(fiber.Config{
@@ -60,15 +73,15 @@ func main() {
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			// 기본 500 에러
 			code := fiber.StatusInternalServerError
-			
+
 			// Fiber 에러인 경우 상태 코드 추출
 			if e, ok := err.(*fiber.Error); ok {
 				code = e.Code
 			}
-			
+
 			// JSON API 요청인 경우 JSON 에러 응답
-			if c.Path() != "/" && (c.Get("Accept") == "application/json" || 
-				c.Get("Content-Type") == "application/json" || 
+			if c.Path() != "/" && (c.Get("Accept") == "application/json" ||
+				c.Get("Content-Type") == "application/json" ||
 				c.Path() == "/api") {
 				return c.Status(code).JSON(fiber.Map{
 					"success": false,
@@ -79,7 +92,7 @@ func main() {
 					"timestamp": time.Now(),
 				})
 			}
-			
+
 			// HTML 에러 페이지
 			return c.Status(code).Render("error", fiber.Map{
 				"Title": "Error",
@@ -95,10 +108,16 @@ func main() {
 		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders: "Origin,Content-Type,Accept,Authorization,X-Request-ID",
 	}))
-	
+
 	app.Use(logger.New(logger.Config{
 		Format: "[${time}] ${status} - ${method} ${path} - ${latency}\n",
 	}))
+
+	// 세션 스토어를 전역으로 설정
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("session_store", sessionStore)
+		return c.Next()
+	})
 
 	// 새로운 라우팅 시스템 사용
 	routes.SetupRoutes(app, sessionStore)

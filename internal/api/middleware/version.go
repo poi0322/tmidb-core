@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tmidb/tmidb-core/internal/database"
@@ -24,7 +25,7 @@ type PaginationContext struct {
 	Page           int  `json:"page"`
 	PageSize       int  `json:"page_size"`
 	AutoPagination bool `json:"auto_pagination"` // 자동 페이징 적용 여부
-	MaxPageSize    int  `json:"max_page_size"`    // 최대 페이지 크기
+	MaxPageSize    int  `json:"max_page_size"`   // 최대 페이지 크기
 }
 
 // VersionMiddleware는 API 버전 처리를 담당합니다
@@ -52,8 +53,8 @@ func VersionMiddleware(version string) fiber.Handler {
 			versionCtx.IsMultiVersion = true
 		default:
 			return c.Status(400).JSON(fiber.Map{
-				"error": "Unsupported API version",
-				"code":  "VERSION_UNSUPPORTED",
+				"error":              "Unsupported API version",
+				"code":               "VERSION_UNSUPPORTED",
 				"supported_versions": []string{"v1", "v2", "latest", "all"},
 			})
 		}
@@ -70,9 +71,9 @@ func PaginationMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		paginationCtx := &PaginationContext{
 			Page:           1,
-			PageSize:       1000,      // 기본 페이지 크기
+			PageSize:       1000, // 기본 페이지 크기
 			AutoPagination: false,
-			MaxPageSize:    100000,    // 최대 10만건
+			MaxPageSize:    100000, // 최대 10만건
 		}
 
 		// 쿼리 파라미터에서 페이징 정보 추출
@@ -87,9 +88,9 @@ func PaginationMiddleware() fiber.Handler {
 				// 사용자 설정 페이지 크기 제한
 				if pageSize > paginationCtx.MaxPageSize {
 					return c.Status(400).JSON(fiber.Map{
-						"error": "Page size too large",
-						"code":  "PAGINATION_SIZE_EXCEEDED",
-						"max_page_size": paginationCtx.MaxPageSize,
+						"error":          "Page size too large",
+						"code":           "PAGINATION_SIZE_EXCEEDED",
+						"max_page_size":  paginationCtx.MaxPageSize,
 						"requested_size": pageSize,
 					})
 				}
@@ -153,7 +154,7 @@ func AutoPaginationMiddleware() fiber.Handler {
 		category := c.Params("category")
 		if category != "" {
 			paginationCtx := GetPaginationContext(c)
-			
+
 			// 자동 페이징 활성화 조건 확인 (10만건 이상)
 			if shouldEnableAutoPagination(c, category) {
 				paginationCtx.AutoPagination = true
@@ -180,14 +181,14 @@ func shouldEnableAutoPagination(c *fiber.Ctx, category string) bool {
 
 	// 데이터베이스에서 해당 카테고리의 대략적인 데이터 크기 확인
 	db := database.GetDB()
-	
+
 	var approxCount int
 	query := `
 		SELECT COUNT(*) 
 		FROM target_categories 
 		WHERE org_id = $1 AND category_name = $2
 	`
-	
+
 	err = db.QueryRow(query, orgID, category).Scan(&approxCount)
 	if err != nil {
 		return false // 에러 시 안전하게 false 반환
@@ -205,7 +206,7 @@ func ValidateVersionAccess(c *fiber.Ctx, category string, requestedVersion strin
 	}
 
 	db := database.GetDB()
-	
+
 	// 해당 카테고리에서 사용 가능한 버전들 조회
 	var availableVersions []string
 	query := `
@@ -214,7 +215,7 @@ func ValidateVersionAccess(c *fiber.Ctx, category string, requestedVersion strin
 		WHERE org_id = $1 AND category_name = $2
 		ORDER BY schema_version::int DESC
 	`
-	
+
 	rows, err := db.Query(query, orgID, category)
 	if err != nil {
 		return err
@@ -245,7 +246,7 @@ func ValidateVersionAccess(c *fiber.Ctx, category string, requestedVersion strin
 				return nil
 			}
 		}
-		
+
 		return fiber.NewError(404, "Requested version not available for this category")
 	}
 }
@@ -254,7 +255,7 @@ func ValidateVersionAccess(c *fiber.Ctx, category string, requestedVersion strin
 func VersionMiddlewareOld() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		version := c.Params("version")
-		
+
 		// 버전 검증 및 정규화
 		normalizedVersion, err := normalizeVersion(version)
 		if err != nil {
@@ -264,7 +265,7 @@ func VersionMiddlewareOld() fiber.Handler {
 					"code":      "INVALID_VERSION",
 					"message":   "Invalid API version",
 					"details":   "Version must be v1, v2, latest, or all",
-					"timestamp": fiber.Time(),
+					"timestamp": time.Now(),
 				},
 			})
 		}
@@ -322,4 +323,4 @@ func IsLatestVersion(version string) bool {
 // IsAllVersions는 모든 버전을 요청한 것인지 확인합니다.
 func IsAllVersions(version string) bool {
 	return strings.ToLower(version) == "all"
-} 
+}

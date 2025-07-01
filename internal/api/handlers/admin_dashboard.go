@@ -61,7 +61,7 @@ func DashboardPage(c *fiber.Ctx) error {
 	database.DB.QueryRow("SELECT COUNT(*) FROM auth_tokens").Scan(&tokenCount)
 
 	return c.Render("admin/dashboard.html", fiber.Map{
-		"title": "Dashboard",
+		"Title": "Dashboard",
 		"stats": fiber.Map{
 			"status":        status,
 			"database_size": dbSize,

@@ -278,26 +278,26 @@ var statusCmd = &cobra.Command{
 
 		// 기본 텍스트 출력
 		fmt.Println("📊 tmiDB-Core Component Status:")
-		for _, component := range components {
-			fmt.Printf("🔍 %s:\n", component)
-
-			if process, exists := processMap[component]; exists {
-				// 실제 프로세스 정보 표시
-				fmt.Printf("  Status: %s\n", process.Status)
-				fmt.Printf("  PID: %d\n", process.PID)
-				fmt.Printf("  Uptime: %s\n", formatDuration(process.Uptime))
-				fmt.Printf("  Memory: %s\n", formatBytes(process.Memory))
-				fmt.Printf("  CPU: %.1f%%\n", process.CPU)
-			} else {
-				// 컴포넌트가 없는 경우
-				fmt.Printf("  Status: not found\n")
-				fmt.Printf("  PID: -\n")
-				fmt.Printf("  Uptime: -\n")
-				fmt.Printf("  Memory: -\n")
-				fmt.Printf("  CPU: -\n")
-			}
-			fmt.Println()
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Printf("%-18s │ %-10s │ %-10s │ %-8s │ %-12s │ %-10s │ %-8s\n",
+			"COMPONENT", "STATUS", "TYPE", "PID", "UPTIME", "MEMORY", "CPU")
+		fmt.Println("──────────────────┼────────────┼────────────┼──────────┼──────────────┼────────────┼──────────")
+		
+		// 외부 서비스 먼저 표시
+		externalServices := []string{"postgresql", "nats", "seaweedfs"}
+		for _, component := range externalServices {
+			printComponentStatus(component, processMap)
 		}
+		
+		fmt.Println("──────────────────┼────────────┼────────────┼──────────┼──────────────┼────────────┼──────────")
+		
+		// 내부 서비스 표시
+		internalServices := []string{"api", "data-manager", "data-consumer"}
+		for _, component := range internalServices {
+			printComponentStatus(component, processMap)
+		}
+		
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 }
 
@@ -518,13 +518,36 @@ func getServiceType(serviceName string) string {
 func getStatusIcon(status string) string {
 	switch status {
 	case "running":
-		return "🟢 "
+		return "🟢"
 	case "stopped":
-		return "🔴 "
+		return "🔴"
 	case "error":
-		return "🟡 "
+		return "🟡"
 	default:
-		return "⚪ "
+		return "⚪"
+	}
+}
+
+// printComponentStatus prints a single component status in table format
+func printComponentStatus(component string, processMap map[string]*ipc.ProcessInfo) {
+	if process, exists := processMap[component]; exists {
+		// 실제 프로세스 정보가 있는 경우
+		statusIcon := getStatusIcon(process.Status)
+		serviceType := getServiceType(component)
+		uptime := formatDuration(process.Uptime)
+		memory := formatBytes(process.Memory)
+		pidStr := fmt.Sprintf("%d", process.PID)
+		cpuStr := fmt.Sprintf("%.1f%%", process.CPU)
+
+		fmt.Printf("%s %-15s │ %-10s │ %-10s │ %-8s │ %-12s │ %-10s │ %-8s\n",
+			statusIcon, component, process.Status, serviceType, pidStr, uptime, memory, cpuStr)
+	} else {
+		// 프로세스 정보가 없는 경우
+		statusIcon := getStatusIcon("not found")
+		serviceType := getServiceType(component)
+		
+		fmt.Printf("%s %-15s │ %-10s │ %-10s │ %-8s │ %-12s │ %-10s │ %-8s\n",
+			statusIcon, component, "not found", serviceType, "-", "-", "-", "-")
 	}
 }
 

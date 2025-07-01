@@ -8,11 +8,26 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tmidb/tmidb-core/internal/config"
+	"github.com/tmidb/tmidb-core/internal/database"
 	"github.com/tmidb/tmidb-core/internal/datamanager"
 )
 
 func main() {
 	log.Println("🚀 Starting tmiDB Data Manager...")
+
+	// 설정 로드
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("❌ Failed to load config: %v", err)
+	}
+
+	// 데이터베이스 연결 (초기화 없이 연결만) - 수정됨 2025-07-01
+	log.Println("📊 Data Manager: Using ConnectDatabase (not InitDatabase)")
+	if err := database.ConnectDatabase(cfg); err != nil {
+		log.Fatalf("❌ Failed to connect to database: %v", err)
+	}
+	defer database.Close()
 
 	// 컨텍스트 생성
 	ctx, cancel := context.WithCancel(context.Background())

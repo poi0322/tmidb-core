@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -11,6 +12,13 @@ import (
 )
 
 var aesgcm cipher.AEAD
+
+// HashPassword는 패스워드를 SHA256으로 해싱합니다
+func HashPassword(password string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(password))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
 
 func InitCrypto(keyString string) error {
 	if keyString == "" {

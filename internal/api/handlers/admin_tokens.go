@@ -14,7 +14,7 @@ import (
 // TokensPage는 API 토큰 관리 페이지를 렌더링합니다.
 func TokensPage(c *fiber.Ctx) error {
 	return c.Render("admin/tokens.html", fiber.Map{
-		"title": "Token Management",
+		"Title": "Token Management",
 	}, "main.html")
 }
 

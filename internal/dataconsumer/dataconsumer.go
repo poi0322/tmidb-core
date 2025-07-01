@@ -78,15 +78,26 @@ func (dc *DataConsumer) Start(ctx context.Context) error {
 // connectDatabase 데이터베이스에 연결합니다
 func (dc *DataConsumer) connectDatabase() error {
 	for i := 0; i < 15; i++ {
-		err := database.CheckDatabaseHealth()
-		if err == nil {
-			log.Println("✅ Data Consumer connected to database")
-			return nil
+		// 전역 DB 변수 확인
+		if database.DB == nil {
+			log.Printf("⏳ Data Consumer: database.DB is nil (attempt %d/15)", i+1)
+		} else {
+			// DB 연결 상태 확인
+			if err := database.CheckDatabaseHealth(); err != nil {
+				log.Printf("⏳ Data Consumer: database health check failed - %v (attempt %d/15)", err, i+1)
+			} else {
+				log.Println("✅ Data Consumer connected to database")
+				return nil
+			}
 		}
-		log.Printf("⏳ Data Consumer waiting for database... (attempt %d/15)", i+1)
 		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("failed to connect to database after 15 attempts")
+	
+	// 최종 실패 시 상세 에러 정보 제공
+	if database.DB == nil {
+		return fmt.Errorf("failed to connect to database after 15 attempts: global DB variable is nil - ensure database.InitDatabase() was called successfully")
+	}
+	return fmt.Errorf("failed to connect to database after 15 attempts: database health check failed")
 }
 
 // handleDataMessage 일반 데이터 메시지를 처리합니다

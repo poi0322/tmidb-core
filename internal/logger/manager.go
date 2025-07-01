@@ -209,10 +209,17 @@ func (m *Manager) WriteLog(component string, level LogLevel, message string) err
 
 	// 콘솔 출력
 	if m.config.ConsoleOutput {
-		fmt.Printf("[%s] %s: %s\n",
+		color := getComponentColor(entry.Process)
+		levelColor := getLevelColor(entry.Level)
+		
+		fmt.Printf("%s[%s] %s%s%s: %s%s\n",
+			color,
 			entry.Timestamp.Format("15:04:05"),
+			color,
 			entry.Process,
-			entry.Message)
+			levelColor,
+			entry.Message,
+			"\033[0m") // reset color
 	}
 
 	// IPC 스트림으로 브로드캐스트
@@ -482,7 +489,7 @@ func (pw *ProcessWriter) Close() error {
 
 // periodicTasks 주기적 작업
 func (m *Manager) periodicTasks() {
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(24 * time.Hour) // 하루에 한 번만 정리
 	defer ticker.Stop()
 
 	for {
@@ -633,4 +640,38 @@ func (m *Manager) addCleanupFunc(fn func()) {
 	defer m.cleanupMux.Unlock()
 
 	m.cleanupFuncs = append(m.cleanupFuncs, fn)
+}
+
+// getComponentColor returns ANSI color code for different components
+func getComponentColor(component string) string {
+	colors := map[string]string{
+		"api":            "\033[32m", // Green
+		"data-manager":   "\033[34m", // Blue
+		"data-consumer":  "\033[35m", // Magenta
+		"postgresql":     "\033[36m", // Cyan
+		"nats":           "\033[33m", // Yellow
+		"seaweedfs":      "\033[31m", // Red
+		"supervisor":     "\033[37m", // White
+	}
+	
+	if color, exists := colors[component]; exists {
+		return color
+	}
+	return "\033[37m" // Default white
+}
+
+// getLevelColor returns ANSI color code for different log levels
+func getLevelColor(level string) string {
+	switch level {
+	case "DEBUG":
+		return "\033[90m" // Dark gray
+	case "INFO":
+		return "\033[37m" // White
+	case "WARN":
+		return "\033[93m" // Bright yellow
+	case "ERROR":
+		return "\033[91m" // Bright red
+	default:
+		return "\033[37m" // Default white
+	}
 }

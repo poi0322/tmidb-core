@@ -10,20 +10,20 @@ import (
 
 // TokenClaims는 토큰에 포함된 정보를 나타냅니다
 type TokenClaims struct {
-	UserID     int    `json:"user_id"`
-	OrgID      int    `json:"org_id"`
-	Username   string `json:"username"`
-	Role       string `json:"role"`        // "admin", "viewer"
-	TokenType  string `json:"token_type"`  // "permanent", "temporary"
+	UserID     int      `json:"user_id"`
+	OrgID      int      `json:"org_id"`
+	Username   string   `json:"username"`
+	Role       string   `json:"role"`       // "admin", "viewer"
+	TokenType  string   `json:"token_type"` // "permanent", "temporary"
 	Categories []string `json:"categories"` // 접근 가능한 카테고리 목록
-	ExpiresAt  int64  `json:"expires_at"`
+	ExpiresAt  int64    `json:"expires_at"`
 }
 
 // CategoryPermissionFunc는 카테고리 권한을 확인하는 함수 타입입니다
 type CategoryPermissionFunc func(c *fiber.Ctx) string
 
-// TokenAuthRequired는 토큰 기반 인증을 요구하는 미들웨어입니다
-func TokenAuthRequired(permission string, categoryFunc CategoryPermissionFunc) fiber.Handler {
+// TokenAuthMiddleware는 토큰 기반 인증을 요구하는 미들웨어입니다
+func TokenAuthMiddleware(permission string, categoryFunc CategoryPermissionFunc) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Authorization 헤더에서 토큰 추출
 		authHeader := c.Get("Authorization")
@@ -49,8 +49,8 @@ func TokenAuthRequired(permission string, categoryFunc CategoryPermissionFunc) f
 		claims, err := validateToken(token)
 		if err != nil {
 			return c.Status(401).JSON(fiber.Map{
-				"error": "Invalid or expired token",
-				"code":  "AUTH_TOKEN_INVALID",
+				"error":   "Invalid or expired token",
+				"code":    "AUTH_TOKEN_INVALID",
 				"details": err.Error(),
 			})
 		}
@@ -77,9 +77,9 @@ func TokenAuthRequired(permission string, categoryFunc CategoryPermissionFunc) f
 		// 권한 레벨 확인
 		if !hasPermission(claims, permission) {
 			return c.Status(403).JSON(fiber.Map{
-				"error": "Insufficient permissions",
-				"code":  "AUTH_PERMISSION_DENIED",
-				"required": permission,
+				"error":     "Insufficient permissions",
+				"code":      "AUTH_PERMISSION_DENIED",
+				"required":  permission,
 				"user_role": claims.Role,
 			})
 		}
@@ -99,11 +99,11 @@ func TokenAuthRequired(permission string, categoryFunc CategoryPermissionFunc) f
 func validateToken(token string) (*TokenClaims, error) {
 	// 데이터베이스에서 토큰 정보 조회
 	db := database.GetDB()
-	
+
 	var claims TokenClaims
 	var isActive bool
 	var expiresAt *time.Time
-	
+
 	query := `
 		SELECT 
 			u.id, u.org_id, u.username, u.role,
@@ -112,24 +112,24 @@ func validateToken(token string) (*TokenClaims, error) {
 		JOIN users u ON t.user_id = u.id
 		WHERE t.token_hash = $1
 	`
-	
+
 	err := db.QueryRow(query, hashToken(token)).Scan(
 		&claims.UserID, &claims.OrgID, &claims.Username, &claims.Role,
 		&claims.TokenType, &claims.Categories, &expiresAt, &isActive,
 	)
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if !isActive {
 		return nil, fiber.NewError(401, "Token has been disabled")
 	}
-	
+
 	if expiresAt != nil {
 		claims.ExpiresAt = expiresAt.Unix()
 	}
-	
+
 	return &claims, nil
 }
 
@@ -153,19 +153,19 @@ func hasCategoryAccess(claims *TokenClaims, category string) bool {
 	if claims.Role == "admin" {
 		return true
 	}
-	
+
 	// 카테고리 제한이 없으면 모든 카테고리 접근 가능
 	if len(claims.Categories) == 0 {
 		return true
 	}
-	
+
 	// 특정 카테고리 접근 권한 확인
 	for _, allowedCategory := range claims.Categories {
 		if allowedCategory == category || allowedCategory == "*" {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -194,4 +194,4 @@ func GetOrgIDFromToken(c *fiber.Ctx) (int, error) {
 		return 0, fiber.NewError(401, "Organization ID not found in token")
 	}
 	return orgID.(int), nil
-} 
+}

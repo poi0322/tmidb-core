@@ -11,7 +11,7 @@ import (
 // SetupPage는 초기 설정 페이지를 렌더링합니다.
 func SetupPage(c *fiber.Ctx) error {
 	return c.Render("setup.html", fiber.Map{
-		"title": "Initial Setup",
+		"Title": "Initial Setup",
 	})
 }
 
@@ -50,4 +50,9 @@ func SetupStatus(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Database error"})
 	}
 	return c.JSON(fiber.Map{"setup_completed": completed})
+}
+
+// CheckSetupStatus는 내부적으로 사용하는 설정 상태 확인 함수입니다.
+func CheckSetupStatus() (bool, error) {
+	return database.IsSetupCompleted()
 }

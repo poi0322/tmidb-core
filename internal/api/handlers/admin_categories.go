@@ -15,7 +15,7 @@ import (
 // CategoriesPage는 카테고리 관리 페이지를 렌더링합니다.
 func CategoriesPage(c *fiber.Ctx) error {
 	return c.Render("admin/categories.html", fiber.Map{
-		"title":  "Category Management",
+		"Title":  "Category Management",
 		"layout": "main",
 	})
 }

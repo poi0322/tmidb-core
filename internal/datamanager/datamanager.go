@@ -68,14 +68,26 @@ func (dm *DataManager) Start(ctx context.Context) error {
 // connectDatabase 데이터베이스에 연결합니다
 func (dm *DataManager) connectDatabase() error {
 	for i := 0; i < 15; i++ {
-		if err := database.CheckDatabaseHealth(); err == nil {
-			log.Println("✅ Data Manager connected to database")
-			return nil
+		// 전역 DB 변수 확인
+		if database.DB == nil {
+			log.Printf("⏳ Data Manager: database.DB is nil (attempt %d/15)", i+1)
+		} else {
+			// DB 연결 상태 확인
+			if err := database.CheckDatabaseHealth(); err != nil {
+				log.Printf("⏳ Data Manager: database health check failed - %v (attempt %d/15)", err, i+1)
+			} else {
+				log.Println("✅ Data Manager connected to database")
+				return nil
+			}
 		}
-		log.Printf("⏳ Data Manager waiting for database... (attempt %d/15)", i+1)
 		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("failed to connect to database after 15 attempts")
+	
+	// 최종 실패 시 상세 에러 정보 제공
+	if database.DB == nil {
+		return fmt.Errorf("failed to connect to database after 15 attempts: global DB variable is nil - ensure database.InitDatabase() was called successfully")
+	}
+	return fmt.Errorf("failed to connect to database after 15 attempts: database health check failed")
 }
 
 // handleDataMessage 일반 데이터 메시지를 처리합니다
@@ -150,8 +162,11 @@ func (dm *DataManager) startDataCollection() {
 
 // collectSystemMetrics 시스템 메트릭을 수집합니다
 func (dm *DataManager) collectSystemMetrics() {
+	// 시스템 메트릭용 고정 UUID 사용 (UUID v4 형식)
+	systemMetricsUUID := "00000000-0000-4000-8000-000000000001"
+	
 	dataPoint := busconsumer.DataPoint{
-		ID:        fmt.Sprintf("system-metrics-%d", time.Now().Unix()),
+		ID:        systemMetricsUUID,
 		Timestamp: time.Now(),
 		Source:    "system",
 		Category:  "metrics",
@@ -160,13 +175,14 @@ func (dm *DataManager) collectSystemMetrics() {
 			"memory_usage": 67.2,
 			"disk_usage":   45.8,
 			"network_io":   1024.0,
+			"timestamp_id": fmt.Sprintf("system-metrics-%d", time.Now().Unix()),
 		},
 	}
 
 	if err := dm.publishData(dataPoint); err != nil {
 		log.Printf("❌ Failed to publish system metrics: %v", err)
 	} else {
-		log.Printf("📤 Data Manager published system metrics: %s", dataPoint.ID)
+		log.Printf("📤 Data Manager published system metrics: %s", dataPoint.Data["timestamp_id"])
 	}
 }
 
