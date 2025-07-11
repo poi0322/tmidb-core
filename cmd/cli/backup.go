@@ -63,7 +63,7 @@ Examples:
 		}
 
 		// 백업 요청
-		resp, err := client.SendMessage(ipc.MessageTypeBackupCreate, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeBackupCreate, map[string]any{
 			"name":       name,
 			"components": components,
 			"compress":   compress,
@@ -80,7 +80,7 @@ Examples:
 		}
 
 		// 진행 상황 표시
-		if backupInfo, ok := resp.Data.(map[string]interface{}); ok {
+		if backupInfo, ok := resp.Data.(map[string]any); ok {
 			backupID := backupInfo["id"].(string)
 
 			// 백업 진행 상황 모니터링
@@ -135,7 +135,7 @@ Examples:
 		}
 
 		// 복구 요청
-		resp, err := client.SendMessage(ipc.MessageTypeBackupRestore, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeBackupRestore, map[string]any{
 			"backup":     backup,
 			"components": components,
 		})
@@ -150,7 +150,7 @@ Examples:
 		}
 
 		// 복구 진행 상황 모니터링
-		if restoreInfo, ok := resp.Data.(map[string]interface{}); ok {
+		if restoreInfo, ok := resp.Data.(map[string]any); ok {
 			restoreID := restoreInfo["id"].(string)
 
 			if err := monitorRestoreProgress(restoreID); err != nil {
@@ -162,7 +162,7 @@ Examples:
 			fmt.Println("🔄 Restarting services...")
 
 			// 서비스 재시작
-			client.SendMessage(ipc.MessageTypeProcessRestart, map[string]interface{}{
+			client.SendMessage(ipc.MessageTypeProcessRestart, map[string]any{
 				"component": "all",
 			})
 		}
@@ -188,7 +188,7 @@ var backupListCmd = &cobra.Command{
 		}
 
 		// 백업 목록 표시
-		if backups, ok := resp.Data.([]interface{}); ok {
+		if backups, ok := resp.Data.([]any); ok {
 			if len(backups) == 0 {
 				fmt.Println("   No backups found")
 				return
@@ -198,11 +198,11 @@ var backupListCmd = &cobra.Command{
 			fmt.Println(strings.Repeat("-", 85))
 
 			for _, backup := range backups {
-				if b, ok := backup.(map[string]interface{}); ok {
+				if b, ok := backup.(map[string]any); ok {
 					id := b["id"].(string)
 					created := b["created"].(string)
 					size := formatBytes(int64(b["size"].(float64)))
-					components := strings.Join(toStringSlice(b["components"].([]interface{})), ", ")
+					components := strings.Join(toStringSlice(b["components"].([]any)), ", ")
 
 					fmt.Printf("%-30s %-20s %-15s %-20s\n", id, created, size, components)
 				}
@@ -231,7 +231,7 @@ var backupDeleteCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := client.SendMessage(ipc.MessageTypeBackupDelete, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeBackupDelete, map[string]any{
 			"id": backupID,
 		})
 		if err != nil {
@@ -258,7 +258,7 @@ var backupVerifyCmd = &cobra.Command{
 
 		fmt.Printf("🔍 Verifying backup: %s\n", backup)
 
-		resp, err := client.SendMessage(ipc.MessageTypeBackupVerify, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeBackupVerify, map[string]any{
 			"backup": backup,
 		})
 		if err != nil {
@@ -272,12 +272,12 @@ var backupVerifyCmd = &cobra.Command{
 		}
 
 		// 검증 결과 표시
-		if result, ok := resp.Data.(map[string]interface{}); ok {
+		if result, ok := resp.Data.(map[string]any); ok {
 			fmt.Println("\n📊 Verification Results:")
 			fmt.Printf("   Status: %s\n", result["status"])
 			fmt.Printf("   Integrity: %s\n", result["integrity"])
 
-			if components, ok := result["components"].(map[string]interface{}); ok {
+			if components, ok := result["components"].(map[string]any); ok {
 				fmt.Println("\n   Components:")
 				for comp, status := range components {
 					icon := "✅"
@@ -288,7 +288,7 @@ var backupVerifyCmd = &cobra.Command{
 				}
 			}
 
-			if errors, ok := result["errors"].([]interface{}); ok && len(errors) > 0 {
+			if errors, ok := result["errors"].([]any); ok && len(errors) > 0 {
 				fmt.Println("\n   Errors:")
 				for _, err := range errors {
 					fmt.Printf("     - %v\n", err)
@@ -308,14 +308,14 @@ func monitorBackupProgress(backupID string) error {
 	for {
 		select {
 		case <-ticker.C:
-			resp, err := client.SendMessage(ipc.MessageTypeBackupProgress, map[string]interface{}{
+			resp, err := client.SendMessage(ipc.MessageTypeBackupProgress, map[string]any{
 				"id": backupID,
 			})
 			if err != nil {
 				return err
 			}
 
-			if progress, ok := resp.Data.(map[string]interface{}); ok {
+			if progress, ok := resp.Data.(map[string]any); ok {
 				status := progress["status"].(string)
 				percent := int(progress["percent"].(float64))
 				current := progress["current"].(string)
@@ -352,14 +352,14 @@ func monitorRestoreProgress(restoreID string) error {
 	for {
 		select {
 		case <-ticker.C:
-			resp, err := client.SendMessage(ipc.MessageTypeRestoreProgress, map[string]interface{}{
+			resp, err := client.SendMessage(ipc.MessageTypeRestoreProgress, map[string]any{
 				"id": restoreID,
 			})
 			if err != nil {
 				return err
 			}
 
-			if progress, ok := resp.Data.(map[string]interface{}); ok {
+			if progress, ok := resp.Data.(map[string]any); ok {
 				status := progress["status"].(string)
 				percent := int(progress["percent"].(float64))
 				current := progress["current"].(string)
@@ -387,7 +387,7 @@ func monitorRestoreProgress(restoreID string) error {
 }
 
 // Helper function
-func toStringSlice(slice []interface{}) []string {
+func toStringSlice(slice []any) []string {
 	result := make([]string, len(slice))
 	for i, v := range slice {
 		result[i] = fmt.Sprintf("%v", v)

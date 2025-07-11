@@ -10,11 +10,11 @@ import (
 
 // CacheItem은 캐시 항목을 나타냅니다
 type CacheItem struct {
-	Value     interface{} `json:"value"`
-	ExpiresAt time.Time   `json:"expires_at"`
-	CreatedAt time.Time   `json:"created_at"`
-	AccessAt  time.Time   `json:"access_at"`
-	HitCount  int         `json:"hit_count"`
+	Value     any       `json:"value"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+	AccessAt  time.Time `json:"access_at"`
+	HitCount  int       `json:"hit_count"`
 }
 
 // isExpired는 캐시 항목이 만료되었는지 확인합니다
@@ -66,7 +66,7 @@ func NewMemoryCache(maxSize int, defaultTTL time.Duration) *MemoryCache {
 }
 
 // Set은 캐시에 값을 저장합니다
-func (c *MemoryCache) Set(key string, value interface{}, ttl time.Duration) {
+func (c *MemoryCache) Set(key string, value any, ttl time.Duration) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -99,7 +99,7 @@ func (c *MemoryCache) Set(key string, value interface{}, ttl time.Duration) {
 }
 
 // Get은 캐시에서 값을 조회합니다
-func (c *MemoryCache) Get(key string) (interface{}, bool) {
+func (c *MemoryCache) Get(key string) (any, bool) {
 	c.mutex.RLock()
 	item, exists := c.items[key]
 	c.mutex.RUnlock()
@@ -144,7 +144,7 @@ func (c *MemoryCache) GetString(key string) (string, bool) {
 }
 
 // GetJSON은 JSON 문자열을 파싱하여 반환합니다
-func (c *MemoryCache) GetJSON(key string, dest interface{}) bool {
+func (c *MemoryCache) GetJSON(key string, dest any) bool {
 	value, exists := c.Get(key)
 	if !exists {
 		return false
@@ -159,7 +159,7 @@ func (c *MemoryCache) GetJSON(key string, dest interface{}) bool {
 }
 
 // SetJSON은 값을 JSON 문자열로 저장합니다
-func (c *MemoryCache) SetJSON(key string, value interface{}, ttl time.Duration) error {
+func (c *MemoryCache) SetJSON(key string, value any, ttl time.Duration) error {
 	jsonBytes, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("JSON 마샬링 실패: %v", err)
@@ -201,7 +201,7 @@ func (c *MemoryCache) DeletePattern(pattern string) int {
 	}
 
 	c.stats.Size = len(c.items)
-	
+
 	if len(keysToDelete) > 0 {
 		log.Printf("패턴 캐시 삭제: %s (%d개)", pattern, len(keysToDelete))
 	}
@@ -466,4 +466,4 @@ func (c *MemoryCache) Close() {
 	close(c.stopCleanup)
 	c.Clear()
 	log.Println("메모리 캐시 종료됨")
-} 
+}

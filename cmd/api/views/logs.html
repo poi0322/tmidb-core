@@ -1,0 +1,328 @@
+{{template "header" .}}
+
+<div x-data="logsData()" x-init="init()" class="space-y-6">
+
+  <!-- 페이지 헤더 -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900 dark:text-white">시스템 로그</h2>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">시스템의 주요 이벤트를 확인합니다.</p>
+    </div>
+    <div class="flex space-x-2">
+      <button @click="exportLogs()" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+        로그 내보내기
+      </button>
+      <button @click="refreshLogs()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+        새로고침
+      </button>
+    </div>
+  </div>
+
+  <!-- 필터 -->
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">로그 레벨</label>
+        <select x-model="filters.level" @change="applyFilters()" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+          <option value="">전체</option>
+          <option value="DEBUG">DEBUG</option>
+          <option value="INFO">INFO</option>
+          <option value="WARN">WARN</option>
+          <option value="ERROR">ERROR</option>
+          <option value="FATAL">FATAL</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">컴포넌트</label>
+        <select x-model="filters.component" @change="applyFilters()" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+          <option value="">전체</option>
+          <option value="api">API</option>
+          <option value="database">Database</option>
+          <option value="consumer">Consumer</option>
+          <option value="manager">Manager</option>
+          <option value="supervisor">Supervisor</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">시작 시간</label>
+        <input x-model="filters.startTime" @change="applyFilters()" type="datetime-local" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+      </div>
+      <div class="flex items-end">
+        <button @click="resetFilters()" class="w-full px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors">
+          필터 초기화
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로그 테이블 -->
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">로그 목록</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">총 <span x-text="filteredLogs.length"></span>개의 로그</p>
+        </div>
+        <div class="flex space-x-2">
+          <button @click="exportLogs()" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+            로그 내보내기
+          </button>
+          <button @click="refreshLogs()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+            새로고침
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div x-show="loading" class="text-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">로그 로딩 중...</p>
+    </div>
+
+    <div x-show="!loading" class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">시간</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">레벨</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">컴포넌트</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">메시지</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">액션</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+          <template x-for="log in paginatedLogs" :key="log.log_id">
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" x-text="formatTimestamp(log.timestamp)"></td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <span class="px-2 py-1 text-xs font-medium rounded-full" :class="getLevelColor(log.level)" x-text="log.level"></span>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" x-text="log.component"></td>
+              <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                <div class="max-w-xs truncate" x-text="log.message"></div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <button @click="viewLogDetails(log)" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300">
+                  상세보기
+                </button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+
+      <div x-show="filteredLogs.length === 0" class="text-center py-8">
+        <p class="text-gray-500 dark:text-gray-400">조건에 맞는 로그가 없습니다.</p>
+      </div>
+    </div>
+
+    <!-- 페이지네이션 -->
+    <div x-show="filteredLogs.length > 0" class="bg-white dark:bg-gray-800 px-4 py-3 border-t border-gray-200 dark:border-gray-700 sm:px-6">
+      <div class="flex items-center justify-between">
+        <div class="flex justify-between flex-1 sm:hidden">
+          <button @click="previousPage()" :disabled="currentPage === 1" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
+            이전
+          </button>
+          <button @click="nextPage()" :disabled="currentPage === totalPages" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
+            다음
+          </button>
+        </div>
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+          <div>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              총 <span class="font-medium" x-text="filteredLogs.length"></span>개 중
+              <span class="font-medium" x-text="(currentPage - 1) * pageSize + 1"></span>-<span class="font-medium" x-text="Math.min(currentPage * pageSize, filteredLogs.length)"></span>개 표시
+            </p>
+          </div>
+          <div>
+            <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+              <button @click="previousPage()" :disabled="currentPage === 1" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">
+                이전
+              </button>
+              <button @click="nextPage()" :disabled="currentPage === totalPages" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">
+                다음
+              </button>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로그 상세 보기 모달 -->
+  <div x-show="showModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="showModal = false">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white">로그 상세 정보</h3>
+        <button @click="showModal = false" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <div x-show="selectedLog">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">로그 ID</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="selectedLog?.log_id"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">타임스탬프</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="formatTimestamp(selectedLog?.timestamp)"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">레벨</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="selectedLog?.level"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">컴포넌트</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="selectedLog?.component"></p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">메시지</label>
+          <pre class="bg-gray-100 dark:bg-gray-700 p-4 rounded-md overflow-auto max-h-96 text-sm" x-text="selectedLog?.message"></pre>
+        </div>
+        <div x-show="selectedLog?.metadata">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">메타데이터</label>
+          <pre class="bg-gray-100 dark:bg-gray-700 p-4 rounded-md overflow-auto max-h-96 text-sm" x-text="JSON.stringify(selectedLog?.metadata, null, 2)"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function logsData() {
+    const orgId = new URLSearchParams(window.location.search).get('org_id') || '{{.Organization.OrgID}}' || 'default';
+    return {
+      loading: false,
+      showModal: false,
+      selectedLog: null,
+      logs: [],
+      filteredLogs: [],
+      currentPage: 1,
+      pageSize: 50,
+      filters: {
+        level: '',
+        component: '',
+        startTime: ''
+      },
+
+      async init() {
+        await this.loadLogs();
+      },
+
+      get paginatedLogs() {
+        const start = (this.currentPage - 1) * this.pageSize;
+        const end = start + this.pageSize;
+        return this.filteredLogs.slice(start, end);
+      },
+
+      get totalPages() {
+        return Math.ceil(this.filteredLogs.length / this.pageSize);
+      },
+
+      async loadLogs() {
+        this.loading = true;
+        try {
+          const response = await apiCall('/api/manage/logs?org_id=' + orgId);
+          this.logs = response.data.logs || [];
+          this.applyFilters();
+        } catch (error) {
+          console.error('Failed to load logs:', error);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      applyFilters() {
+        this.filteredLogs = this.logs.filter(log => {
+          let match = true;
+
+          if (this.filters.level && log.level !== this.filters.level) {
+            match = false;
+          }
+
+          if (this.filters.component && log.component !== this.filters.component) {
+            match = false;
+          }
+
+          if (this.filters.startTime) {
+            const logTime = new Date(log.timestamp);
+            const startTime = new Date(this.filters.startTime);
+            if (logTime < startTime) match = false;
+          }
+
+          return match;
+        });
+
+        this.currentPage = 1;
+      },
+
+      resetFilters() {
+        this.filters = {
+          level: '',
+          component: '',
+          startTime: ''
+        };
+        this.applyFilters();
+      },
+
+      previousPage() {
+        if (this.currentPage > 1) {
+          this.currentPage--;
+        }
+      },
+
+      nextPage() {
+        if (this.currentPage < this.totalPages) {
+          this.currentPage++;
+        }
+      },
+
+      viewLogDetails(log) {
+        this.selectedLog = log;
+        this.showModal = true;
+      },
+
+      async exportLogs() {
+        const logsData = this.filteredLogs.map(log => ({
+          timestamp: log.timestamp,
+          level: log.level,
+          component: log.component,
+          message: log.message,
+          metadata: log.metadata
+        }));
+
+        const dataStr = JSON.stringify(logsData, null, 2);
+        const dataBlob = new Blob([dataStr], {
+          type: 'application/json'
+        });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `logs_export_${new Date().toISOString().split('T')[0]}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      },
+
+      async refreshLogs() {
+        await this.loadLogs();
+      },
+
+      getLevelColor(level) {
+        const colors = {
+          'DEBUG': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
+          'INFO': 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200',
+          'WARN': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200',
+          'ERROR': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200',
+          'FATAL': 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200'
+        };
+        return colors[level] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-200';
+      },
+
+      formatTimestamp(timestamp) {
+        return new Date(timestamp).toLocaleString('ko-KR');
+      }
+    }
+  }
+</script>
+
+{{template "footer" .}}

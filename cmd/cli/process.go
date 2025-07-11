@@ -30,13 +30,13 @@ var processListCmd = &cobra.Command{
 
 		// 출력 형식 확인
 		formatter := getFormatter(cmd)
-		
+
 		// JSON 출력인 경우
 		if formatter.format == "json" || formatter.format == "json-pretty" {
 			// ProcessInfo를 JSON 호환 형식으로 변환
-			var processData []interface{}
+			var processData []any
 			for _, process := range processes {
-				processMap := map[string]interface{}{
+				processMap := map[string]any{
 					"name":       process.Name,
 					"status":     process.Status,
 					"pid":        process.PID,
@@ -48,7 +48,7 @@ var processListCmd = &cobra.Command{
 				}
 				processData = append(processData, processMap)
 			}
-			
+
 			formatted := FormatProcessList(processData)
 			formatter.Print(formatted)
 			return

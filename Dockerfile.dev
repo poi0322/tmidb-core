@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     locales \
     lsb-release \
     util-linux \
+    gcc \
+    libc6-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Set locale
@@ -26,16 +29,26 @@ ENV LANG=en_US.UTF-8
 RUN curl -s https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/postgresql.gpg && \
     echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     apt-get update && \
-    apt-get install -y postgresql-15 && \
+    apt-get install -y postgresql-16 postgresql-client-16 && \
     rm -rf /var/lib/apt/lists/* && \
-    ln -s /usr/lib/postgresql/15/bin/postgres /usr/local/bin/postgres && \
-    ln -s /usr/lib/postgresql/15/bin/initdb /usr/local/bin/initdb
+    ln -s /usr/lib/postgresql/16/bin/postgres /usr/local/bin/postgres && \
+    ln -s /usr/lib/postgresql/16/bin/initdb /usr/local/bin/initdb && \
+    ln -s /usr/lib/postgresql/16/bin/pg_ctl /usr/local/bin/pg_ctl && \
+    ln -s /usr/lib/postgresql/16/bin/createdb /usr/local/bin/createdb && \
+    ln -s /usr/lib/postgresql/16/bin/psql /usr/local/bin/psql
 
 # Install TimescaleDB
 RUN curl -sSL https://packagecloud.io/timescale/timescaledb/gpgkey | apt-key add - && \
     echo "deb https://packagecloud.io/timescale/timescaledb/debian/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/timescaledb.list && \
     apt-get update && \
-    apt-get install -y timescaledb-2-postgresql-15
+    apt-get install -y timescaledb-2-postgresql-16
+
+# Install pg_uuidv7
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential postgresql-server-dev-16 && \
+    cd /tmp && \
+    git clone https://github.com/fboulnois/pg_uuidv7.git && \
+    cd pg_uuidv7 && \
+    make && make install
 
 # Install NATS Server
 RUN curl -L https://github.com/nats-io/nats-server/releases/download/v2.10.21/nats-server-v2.10.21-linux-amd64.tar.gz | tar -xz && \
@@ -54,7 +67,7 @@ RUN adduser --system --group natsuser && \
 # postgres user is created by postgresql-15 package
 
 # Create directories and set permissions
-RUN mkdir -p /app /data/postgresql /data/seaweedfs /data/nats /var/run/postgresql && \
+RUN mkdir -p /app /app/bin /app/bin /app/scripts /data/postgresql /data/seaweedfs /data/nats /var/run/postgresql && \
     chown -R postgres:postgres /data/postgresql /var/run/postgresql && \
     chown -R natsuser:natsuser /data/nats && \
     chown -R seaweeduser:seaweeduser /data/seaweedfs && \
@@ -66,6 +79,9 @@ RUN mkdir -p /app /data/postgresql /data/seaweedfs /data/nats /var/run/postgresq
 RUN echo '#!/bin/bash' > /usr/local/bin/init-postgres.sh && \
     echo 'set -e' >> /usr/local/bin/init-postgres.sh && \
     echo '' >> /usr/local/bin/init-postgres.sh && \
+    echo '# Create data directory if it does not exist' >> /usr/local/bin/init-postgres.sh && \
+    echo 'mkdir -p /data/postgresql /data/nats /data/seaweedfs' >> /usr/local/bin/init-postgres.sh && \
+    echo '' >> /usr/local/bin/init-postgres.sh && \
     echo '# Check if PostgreSQL data directory is initialized' >> /usr/local/bin/init-postgres.sh && \
     echo 'if [ ! -f "/data/postgresql/PG_VERSION" ]; then' >> /usr/local/bin/init-postgres.sh && \
     echo '    echo "Initializing PostgreSQL data directory..."' >> /usr/local/bin/init-postgres.sh && \
@@ -75,12 +91,20 @@ RUN echo '#!/bin/bash' > /usr/local/bin/init-postgres.sh && \
     echo '    # Initialize as postgres user' >> /usr/local/bin/init-postgres.sh && \
     echo '    su - postgres -c "initdb -D /data/postgresql --encoding=UTF8 --locale=en_US.UTF-8"' >> /usr/local/bin/init-postgres.sh && \
     echo '    echo "PostgreSQL data directory initialized successfully"' >> /usr/local/bin/init-postgres.sh && \
+    echo '    # Append custom settings to postgresql.conf' >> /usr/local/bin/init-postgres.sh && \
+    echo '    { echo "listen_addresses = '\''*'\''"; echo "shared_preload_libraries = '\''timescaledb'\''"; } >> /data/postgresql/postgresql.conf' >> /usr/local/bin/init-postgres.sh && \
+    echo '    # Allow all connections for development' >> /usr/local/bin/init-postgres.sh && \
+    echo '    echo "host all all 0.0.0.0/0 scram-sha-256" >> /data/postgresql/pg_hba.conf' >> /usr/local/bin/init-postgres.sh && \
     echo 'else' >> /usr/local/bin/init-postgres.sh && \
     echo '    echo "PostgreSQL data directory already initialized"' >> /usr/local/bin/init-postgres.sh && \
     echo '    # Ensure correct ownership even if already initialized' >> /usr/local/bin/init-postgres.sh && \
     echo '    chown -R postgres:postgres /data/postgresql' >> /usr/local/bin/init-postgres.sh && \
     echo '    chmod 700 /data/postgresql' >> /usr/local/bin/init-postgres.sh && \
     echo 'fi' >> /usr/local/bin/init-postgres.sh && \
+    echo '' >> /usr/local/bin/init-postgres.sh && \
+    echo '# Set ownership for other service directories' >> /usr/local/bin/init-postgres.sh && \
+    echo 'chown -R natsuser:natsuser /data/nats' >> /usr/local/bin/init-postgres.sh && \
+    echo 'chown -R seaweeduser:seaweeduser /data/seaweedfs' >> /usr/local/bin/init-postgres.sh && \
     chmod +x /usr/local/bin/init-postgres.sh
 
 # Initialize PostgreSQL data directory as the postgres user (for build-time)
@@ -88,33 +112,77 @@ USER postgres
 RUN initdb -D /data/postgresql --encoding=UTF8 --locale=en_US.UTF-8
 USER root
 
+# Allow all connections to postgres for development - MOVED to init-postgres.sh
+# RUN echo "listen_addresses = '*'" >> /data/postgresql/postgresql.conf
+# RUN echo "host    all             all             0.0.0.0/0               scram-sha-256" >> /data/postgresql/pg_hba.conf
+
+# Enable TimescaleDB extension - MOVED to init-postgres.sh
+# RUN echo "shared_preload_libraries = 'timescaledb'" >> /data/postgresql/postgresql.conf
+
+# Set PostgreSQL data directory environment variable
+ENV PGDATA=/data/postgresql
+
 WORKDIR /app
 
 # Copy Go module files to leverage Docker cache
 COPY go.mod go.sum ./
 RUN go mod download && go mod tidy
 
-# Set path for any Go binaries we might build inside
-ENV PATH="/app/bin:${GOPATH}/bin:${PATH}"
+# Copy scripts first and make them executable
+COPY scripts/ ./scripts/
+RUN chmod +x ./scripts/*.sh
 
 # Copy application source
 COPY . .
 
-# Ensure all dependencies are properly resolved
-RUN go mod tidy
+# Set environment variables
+# Go 빌드 설정 (CGO 비활성화로 순수 Go 빌드)
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+# 아키텍처를 자동 감지하도록 설정
 
-# Build all necessary binaries
-RUN go build -o /app/bin/supervisor ./cmd/supervisor
-RUN go build -o /app/bin/tmidb-cli ./cmd/cli
-RUN go build -o /app/bin/api ./cmd/api
-RUN go build -o /app/bin/data-manager ./cmd/data-manager
-RUN go build -o /app/bin/data-consumer ./cmd/data-consumer
+# tmiDB 개발 환경 설정
+ENV TMIDB_DEV_MODE=true
+ENV TMIDB_LOG_LEVEL=debug
+ENV TMIDB_HOT_RELOAD=true
+ENV TMIDB_BIN_PATH=/app/bin
+
+# 데이터베이스 설정
+ENV DB_HOST=localhost
+ENV DB_PORT=5432
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=postgres
+ENV POSTGRES_DB=_core_tmidb
+ENV TMIDB_USER=admin
+ENV TMIDB_PASSWORD=lighten_0208
+
+# 서비스 설정
+ENV API_PORT=8020
+ENV NATS_URL=nats://localhost:4222
+
+# 초기화 설정
+ENV TMIDB_INIT_MODE=setup
+ENV TMIDB_INIT_USER=admin
+ENV TMIDB_INIT_PASSWORD=lighten_0208
+ENV TMIDB_INIT_ORG=finenurse
+ENV TMIDB_INIT_ADMIN_TOKEN=XzF9NQhH51NCx-zkg3wJE8KRAK4EBRc8GSn5uxEfQ5VkZeepMs1-Tyx1pnS9vra1TTMM-hCZJM9bfhkDeJ35qw==
+
+# 암호화 키
+ENV ENCRYPTION_KEY=e8e1694709a47355153cf11794252386a683d789a781b5399583643f82862e63
+
+# Set environment paths - Go should already be available in the golang base image
+ENV PATH="/app/bin:/usr/local/go/bin:/go/bin:${PATH}"
+ENV GOPATH="/go"
+ENV GOROOT="/usr/local/go"
 
 # Copy and setup entrypoint
 COPY docker-entrypoint.dev.sh /usr/local/bin/docker-entrypoint.dev.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.dev.sh
 
+# Initial build of all components (will be rebuilt by Air during development)
+RUN ./scripts/build.sh all
+
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.dev.sh"]
 
-# Default command can be overridden, but is useful for standalone runs.
+# Air will handle hot-reloading and rebuilding
 CMD ["air", "-c", ".air.toml"] 

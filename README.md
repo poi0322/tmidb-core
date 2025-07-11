@@ -97,6 +97,6 @@ tmidb-cli process list -o json-pretty     # Pretty JSON output
 
 ### Environment Variables
 
-- `TMIDB_SOCKET_PATH`: Unix socket path for IPC communication (default: `/tmp/tmidb-supervisor.sock`)
+- `TMIDB_SOCKET_PATH`: Unix socket path for IPC communication (default: `/bin/tmidb-supervisor.sock`)
 
 For more details, see [CLI Blueprint](cli_blueprint.md) and [CLI Development Summary](cli_development_summary.md).

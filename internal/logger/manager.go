@@ -53,6 +53,9 @@ type Manager struct {
 	streams    map[string]bool // 컴포넌트별 스트림 활성화 상태
 	streamsMux sync.RWMutex
 
+	// 콘솔 출력 동기화
+	consoleMux sync.Mutex
+
 	// Go 1.24 기능: 자원 관리
 	cleanupFuncs []func()
 	cleanupMux   sync.Mutex
@@ -154,9 +157,11 @@ func (m *Manager) Stop() error {
 	m.cancel()
 
 	// 모든 라이터 종료
-	m.writersMux.Lock()
+			m.writersMux.Lock()
 	for _, writer := range m.writers {
-		writer.Close()
+		if err := writer.Close(); err != nil {
+			log.Printf("⚠️ Failed to close log writer for %s: %v", writer.component, err)
+		}
 	}
 	m.writersMux.Unlock()
 
@@ -207,11 +212,12 @@ func (m *Manager) WriteLog(component string, level LogLevel, message string) err
 		return err
 	}
 
-	// 콘솔 출력
+	// 콘솔 출력 (동기화)
 	if m.config.ConsoleOutput {
+		m.consoleMux.Lock()
 		color := getComponentColor(entry.Process)
 		levelColor := getLevelColor(entry.Level)
-		
+
 		fmt.Printf("%s[%s] %s%s%s: %s%s\n",
 			color,
 			entry.Timestamp.Format("15:04:05"),
@@ -220,6 +226,7 @@ func (m *Manager) WriteLog(component string, level LogLevel, message string) err
 			levelColor,
 			entry.Message,
 			"\033[0m") // reset color
+		m.consoleMux.Unlock()
 	}
 
 	// IPC 스트림으로 브로드캐스트
@@ -393,13 +400,15 @@ func (pw *ProcessWriter) rotate() error {
 		pw.gzipWriter = nil
 	}
 
-	if err := pw.writer.Flush(); err != nil {
-		return err
-	}
+			if err := pw.writer.Flush(); err != nil {
+			log.Printf("⚠️ Failed to flush writer during rotation: %v", err)
+			return err
+		}
 
-	if err := pw.file.Close(); err != nil {
-		return err
-	}
+		if err := pw.file.Close(); err != nil {
+			log.Printf("⚠️ Failed to close file during rotation: %v", err)
+			return err
+		}
 
 	// 파일 이동 (압축 포함)
 	logDir := filepath.Dir(pw.file.Name())
@@ -415,9 +424,11 @@ func (pw *ProcessWriter) rotate() error {
 			newFile += ".gz"
 		}
 
-		if _, err := os.Stat(oldFile); err == nil {
-			os.Rename(oldFile, newFile)
-		}
+					if _, err := os.Stat(oldFile); err == nil {
+				if err := os.Rename(oldFile, newFile); err != nil {
+					log.Printf("⚠️ Failed to rename old log file %s to %s: %v", oldFile, newFile, err)
+				}
+			}
 	}
 
 	// 현재 파일을 .0으로 이동 (압축 포함)
@@ -426,11 +437,15 @@ func (pw *ProcessWriter) rotate() error {
 		if err := pw.compressFile(pw.file.Name(), rotatedFile+".gz"); err != nil {
 			log.Printf("❌ Failed to compress log file: %v", err)
 		} else {
-			os.Remove(pw.file.Name()) // 원본 파일 삭제
+			if err := os.Remove(pw.file.Name()); err != nil {
+									log.Printf("⚠️ Failed to remove original log file after compression: %v", err)
+				}
+			}
+		} else {
+			if err := os.Rename(pw.file.Name(), rotatedFile); err != nil {
+				log.Printf("⚠️ Failed to rename current log file to rotated file: %v", err)
+			}
 		}
-	} else {
-		os.Rename(pw.file.Name(), rotatedFile)
-	}
 
 	// 새 파일 생성
 	file, err := os.OpenFile(pw.file.Name(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -585,7 +600,7 @@ func (m *Manager) handleLogEnable(conn *ipc.Connection, msg *ipc.Message) *ipc.R
 	}
 
 	m.EnableStream(component)
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"component": component,
 		"enabled":   true,
 	}, "")
@@ -599,7 +614,7 @@ func (m *Manager) handleLogDisable(conn *ipc.Connection, msg *ipc.Message) *ipc.
 	}
 
 	m.DisableStream(component)
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"component": component,
 		"enabled":   false,
 	}, "")
@@ -631,7 +646,9 @@ func (m *Manager) cleanup() {
 		cleanupFunc()
 	}
 
-	m.Stop()
+	if err := m.Stop(); err != nil {
+		log.Printf("⚠️ Failed to stop log manager during cleanup: %v", err)
+	}
 }
 
 // addCleanupFunc 정리 함수 추가
@@ -645,15 +662,15 @@ func (m *Manager) addCleanupFunc(fn func()) {
 // getComponentColor returns ANSI color code for different components
 func getComponentColor(component string) string {
 	colors := map[string]string{
-		"api":            "\033[32m", // Green
-		"data-manager":   "\033[34m", // Blue
-		"data-consumer":  "\033[35m", // Magenta
-		"postgresql":     "\033[36m", // Cyan
-		"nats":           "\033[33m", // Yellow
-		"seaweedfs":      "\033[31m", // Red
-		"supervisor":     "\033[37m", // White
+		"api":           "\033[32m", // Green
+		"data-manager":  "\033[34m", // Blue
+		"data-consumer": "\033[35m", // Magenta
+		"postgresql":    "\033[36m", // Cyan
+		"nats":          "\033[33m", // Yellow
+		"seaweedfs":     "\033[31m", // Red
+		"supervisor":    "\033[37m", // White
 	}
-	
+
 	if color, exists := colors[component]; exists {
 		return color
 	}

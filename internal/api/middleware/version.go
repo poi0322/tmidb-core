@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"regexp"
 	"strconv"
 	"strings"
@@ -323,4 +325,37 @@ func IsLatestVersion(version string) bool {
 // IsAllVersions는 모든 버전을 요청한 것인지 확인합니다.
 func IsAllVersions(version string) bool {
 	return strings.ToLower(version) == "all"
+}
+
+// GetOrgIDFromToken은 토큰에서 조직 ID를 가져옵니다.
+func GetOrgIDFromToken(c *fiber.Ctx) (string, error) {
+	// 먼저 컨텍스트에서 org_id를 찾아봅니다 (UserTokenAuthRequired 미들웨어에서 설정)
+	if orgID := c.Locals("org_id"); orgID != nil {
+		return orgID.(string), nil
+	}
+
+	// 토큰에서 직접 조회
+	authHeader := c.Get("Authorization")
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		return "", fiber.NewError(fiber.StatusUnauthorized, "Authorization header required")
+	}
+
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	hash := sha256.New()
+	hash.Write([]byte(token))
+	tokenHash := hex.EncodeToString(hash.Sum(nil))
+
+	var orgID string
+	err := database.CoreDB.QueryRow(`
+		SELECT u.org_id
+		FROM users u
+		JOIN user_access_tokens t ON u.user_id = t.user_id
+		WHERE t.token_hash = $1 AND t.is_active = TRUE AND u.is_active = TRUE
+	`, tokenHash).Scan(&orgID)
+
+	if err != nil {
+		return "", fiber.NewError(fiber.StatusUnauthorized, "Invalid token")
+	}
+
+	return orgID, nil
 }

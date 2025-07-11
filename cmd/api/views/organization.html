@@ -1,0 +1,247 @@
+{{template "header" .}}
+
+<div x-data="organizationData()" x-init="init()" class="space-y-6">
+
+  <!-- 페이지 헤더 -->
+  <div class="flex items-center justify-between">
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">조직 관리</h2>
+    <a href="/organization/create" class="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+      새 조직 생성
+    </a>
+  </div>
+
+  <div class="mb-8">
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2" x-text="organization.name ? organization.name : loading ? '로딩 중...' : '조직 정보 없음'"></h2>
+    <p class="text-gray-600 dark:text-gray-400 mb-4">조직 ID: <span class="font-mono">{{.Organization.OrgID}}</span></p>
+  </div>
+
+  <!-- 탭 메뉴 -->
+  <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
+    <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+      <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+        개요
+      </button>
+      <button @click="activeTab = 'members'" :class="activeTab === 'members' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+        멤버
+      </button>
+      <button @click="activeTab = 'settings'" :class="activeTab === 'settings' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+        설정
+      </button>
+      <button @click="activeTab = 'danger'" :class="activeTab === 'danger' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+        위험 구역
+      </button>
+    </nav>
+  </div>
+
+  <!-- 탭 콘텐츠 -->
+  <div x-show="loading" class="text-center py-8">
+    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+    <p class="mt-2 text-gray-600 dark:text-gray-400">데이터 로딩 중...</p>
+  </div>
+
+  <div x-show="!loading">
+    <!-- 개요 탭 -->
+    <div x-show="activeTab === 'overview'">
+      <!-- 통계 카드 -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <div class="flex items-center">
+            <div class="flex-shrink-0 w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-4H5m14 8H5m14 4H5"></path>
+              </svg>
+            </div>
+            <div class="ml-4">
+              <div class="text-2xl font-bold text-gray-900 dark:text-white" x-text="organization.stats?.category_count || 0"></div>
+              <div class="text-sm text-gray-600 dark:text-gray-400">카테고리</div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <div class="flex items-center">
+            <div class="flex-shrink-0 w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+              </svg>
+            </div>
+            <div class="ml-4">
+              <div class="text-2xl font-bold text-gray-900 dark:text-white" x-text="organization.stats?.target_count || 0"></div>
+              <div class="text-sm text-gray-600 dark:text-gray-400">타겟</div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <div class="flex items-center">
+            <div class="flex-shrink-0 w-8 h-8 bg-purple-500 rounded-md flex items-center justify-center">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-5 5v-5zM9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <div class="ml-4">
+              <div class="text-2xl font-bold text-gray-900 dark:text-white" x-text="organization.stats?.listener_count || 0"></div>
+              <div class="text-sm text-gray-600 dark:text-gray-400">리스너</div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <div class="flex items-center">
+            <div class="flex-shrink-0 w-8 h-8 bg-yellow-500 rounded-md flex items-center justify-center">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"></path>
+              </svg>
+            </div>
+            <div class="ml-4">
+              <div class="text-2xl font-bold text-gray-900 dark:text-white" x-text="organization.stats?.user_count || 0"></div>
+              <div class="text-sm text-gray-600 dark:text-gray-400">사용자</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 최근 활동 -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+        <div class="p-6">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">최근 활동</h3>
+          <div x-show="activities_loading" class="text-center py-4">
+            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+          </div>
+          <div x-show="!activities_loading" class="space-y-3">
+            <template x-for="activity in activities" :key="activity.id">
+              <div class="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                <div class="flex-1">
+                  <p class="text-sm text-gray-900 dark:text-white" x-text="activity.message"></p>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400" x-text="window.formatDate(activity.timestamp)"></div>
+              </div>
+            </template>
+            <div x-show="activities.length === 0" class="text-center py-4 text-gray-500 dark:text-gray-400">최근 활동이 없습니다.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 멤버 탭 -->
+    <div x-show="activeTab === 'members'" class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">조직 멤버</h3>
+      <p class="text-gray-600 dark:text-gray-400">이 기능은 곧 제공될 예정입니다.</p>
+    </div>
+
+    <!-- 설정 탭 -->
+    <div x-show="activeTab === 'settings'" class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">조직 설정</h3>
+      <div class="max-w-md">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">조직 이름</label>
+          <input x-model="form.name" type="text" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <button @click="updateOrganization()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">설정 저장</button>
+      </div>
+    </div>
+
+    <!-- 위험 구역 탭 -->
+    <div x-show="activeTab === 'danger'" class="bg-white dark:bg-gray-800 rounded-lg shadow border border-red-500 p-6">
+      <h3 class="text-lg font-semibold text-red-600 dark:text-red-400 mb-4">위험 구역</h3>
+      <div>
+        <h4 class="font-semibold text-gray-900 dark:text-white">조직 삭제</h4>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1 mb-3">이 작업은 되돌릴 수 없습니다. 조직과 관련된 모든 데이터가 영구적으로 삭제됩니다.</p>
+        <button @click="deleteOrganization()" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">조직 삭제</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+  function organizationData() {
+    const orgId = '{{.Organization.OrgID}}';
+    return {
+      loading: true,
+      activities_loading: true,
+      activeTab: 'overview',
+      organization: {
+        name: '{{.Organization.Name}}',
+        stats: {}
+      },
+      activities: [],
+      form: {
+        name: '{{.Organization.Name}}'
+      },
+
+      async init() {
+        await this.loadOrganizationData();
+      },
+
+      async loadOrganizationData() {
+        this.loading = true;
+        try {
+          const response = await apiCall(`/api/manage/organizations/${orgId}`);
+          if (response && response.success) {
+            this.organization = response.organization;
+            this.form.name = this.organization.name;
+          } else if (response && (response.status === 401 || response.status === 403)) {
+            window.location.href = '/login';
+            return;
+          }
+          await this.loadActivities();
+        } catch (error) {
+          // 401/403 등 권한 오류 시 즉시 로그인 페이지로 이동
+          if (error && error.message && (error.message.includes('401') || error.message.includes('403'))) {
+            window.location.href = '/login';
+            return;
+          }
+          console.error('Failed to load organization data:', error);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async loadActivities() {
+        this.activities_loading = true;
+        try {
+          const response = await apiCall(`/api/manage/dashboard/activities?org_id=${orgId}`);
+          if (response.success) {
+            this.activities = response.data || [];
+          }
+        } catch (error) {
+          console.error('Failed to load activities:', error);
+        } finally {
+          this.activities_loading = false;
+        }
+      },
+
+      async updateOrganization() {
+        try {
+          const response = await apiCall(`/api/manage/organizations/${orgId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: this.form.name
+            })
+          });
+          if (response.success) {
+            alert('조직 정보가 업데이트되었습니다.');
+            await this.loadOrganizationData();
+          }
+        } catch (error) {
+          alert('업데이트 실패: ' + error.message);
+        }
+      },
+
+      async deleteOrganization() {
+        if (prompt('정말로 이 조직을 삭제하려면 조직 이름("' + this.organization.name + '")을 입력하세요.') !== this.organization.name) {
+          alert('조직 이름이 일치하지 않습니다.');
+          return;
+        }
+        try {
+          await apiCall(`/api/manage/organizations/${orgId}`, {
+            method: 'DELETE'
+          });
+          alert('조직이 삭제되었습니다. 대시보드로 이동합니다.');
+          window.location.href = '/dashboard';
+        } catch (error) {
+          alert('삭제 실패: ' + error.message);
+        }
+      }
+    }
+  }
+</script>
+
+{{template "footer" .}}

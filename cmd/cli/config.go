@@ -45,7 +45,7 @@ Examples:
 		fmt.Println()
 
 		// 설정 요청
-		resp, err := client.SendMessage(ipc.MessageTypeConfigGet, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeConfigGet, map[string]any{
 			"key": key,
 		})
 		if err != nil {
@@ -92,7 +92,7 @@ Examples:
 		value := args[1]
 
 		// 값 타입 추론
-		var typedValue interface{}
+		var typedValue any
 		if value == "true" || value == "false" {
 			typedValue = value == "true"
 		} else if num, err := fmt.Sscanf(value, "%d", new(int)); err == nil && num == 1 {
@@ -104,7 +104,7 @@ Examples:
 		fmt.Printf("⚙️  Setting %s = %v\n", key, typedValue)
 
 		// 설정 요청
-		resp, err := client.SendMessage(ipc.MessageTypeConfigSet, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeConfigSet, map[string]any{
 			"key":   key,
 			"value": typedValue,
 		})
@@ -121,9 +121,9 @@ Examples:
 		fmt.Printf("✅ Configuration updated successfully\n")
 
 		// 재시작 필요 여부 확인
-		if needsRestart, ok := resp.Data.(map[string]interface{})["needs_restart"].(bool); ok && needsRestart {
+		if needsRestart, ok := resp.Data.(map[string]any)["needs_restart"].(bool); ok && needsRestart {
 			fmt.Printf("⚠️  This change requires a restart to take effect\n")
-			if component, ok := resp.Data.(map[string]interface{})["component"].(string); ok {
+			if component, ok := resp.Data.(map[string]any)["component"].(string); ok {
 				fmt.Printf("   Run: tmidb-cli process restart %s\n", component)
 			}
 		}
@@ -149,9 +149,9 @@ var configListCmd = &cobra.Command{
 		}
 
 		// 설정 목록 출력
-		if configs, ok := resp.Data.([]interface{}); ok {
+		if configs, ok := resp.Data.([]any); ok {
 			for _, config := range configs {
-				if configMap, ok := config.(map[string]interface{}); ok {
+				if configMap, ok := config.(map[string]any); ok {
 					key := configMap["key"].(string)
 					value := configMap["value"]
 					description := configMap["description"].(string)
@@ -206,7 +206,7 @@ Examples:
 			key = args[0]
 		}
 
-		resp, err := client.SendMessage(ipc.MessageTypeConfigReset, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeConfigReset, map[string]any{
 			"key": key,
 			"all": all,
 		})
@@ -245,7 +245,7 @@ Examples:
 		fmt.Printf("📤 Exporting configuration to: %s\n", filename)
 
 		// 설정 가져오기
-		resp, err := client.SendMessage(ipc.MessageTypeConfigGet, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeConfigGet, map[string]any{
 			"key": "",
 		})
 		if err != nil {
@@ -308,7 +308,7 @@ Examples:
 		}
 
 		// 파싱
-		var config map[string]interface{}
+		var config map[string]any
 		format := filepath.Ext(filename)
 
 		switch format {
@@ -324,7 +324,7 @@ Examples:
 		}
 
 		// 설정 적용
-		resp, err := client.SendMessage(ipc.MessageTypeConfigImport, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeConfigImport, map[string]any{
 			"config": config,
 		})
 		if err != nil {
@@ -340,7 +340,7 @@ Examples:
 		fmt.Println("✅ Configuration imported successfully")
 
 		// 변경 사항 표시
-		if changes, ok := resp.Data.(map[string]interface{})["changes"].([]interface{}); ok && len(changes) > 0 {
+		if changes, ok := resp.Data.(map[string]any)["changes"].([]any); ok && len(changes) > 0 {
 			fmt.Printf("\n📝 Applied %d changes:\n", len(changes))
 			for _, change := range changes {
 				fmt.Printf("   - %v\n", change)
@@ -362,7 +362,7 @@ Examples:
   tmidb-cli config validate ./config.yaml`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		var config map[string]interface{}
+		var config map[string]any
 
 		if len(args) > 0 {
 			// 파일에서 읽기
@@ -392,7 +392,7 @@ Examples:
 		}
 
 		// 검증 요청
-		resp, err := client.SendMessage(ipc.MessageTypeConfigValidate, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeConfigValidate, map[string]any{
 			"config": config,
 		})
 		if err != nil {
@@ -408,7 +408,7 @@ Examples:
 		fmt.Println("✅ Configuration is valid")
 
 		// 경고 표시
-		if warnings, ok := resp.Data.(map[string]interface{})["warnings"].([]interface{}); ok && len(warnings) > 0 {
+		if warnings, ok := resp.Data.(map[string]any)["warnings"].([]any); ok && len(warnings) > 0 {
 			fmt.Printf("\n⚠️  %d warnings:\n", len(warnings))
 			for _, warning := range warnings {
 				fmt.Printf("   - %v\n", warning)
@@ -418,13 +418,13 @@ Examples:
 }
 
 // 설정 출력 헬퍼
-func printConfig(data interface{}, indent int) {
+func printConfig(data any, indent int) {
 	prefix := strings.Repeat("  ", indent)
 
 	switch v := data.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for key, value := range v {
-			if nested, ok := value.(map[string]interface{}); ok {
+			if nested, ok := value.(map[string]any); ok {
 				fmt.Printf("%s%s:\n", prefix, key)
 				printConfig(nested, indent+1)
 			} else {

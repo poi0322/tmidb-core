@@ -52,7 +52,7 @@ type Manager struct {
 	// Go 1.24 기능: 자원 관리
 	cleanupFuncs []func()
 	cleanupMux   sync.Mutex
-	
+
 	// External service restart callback
 	externalServiceRestarter func(serviceName string) error
 }
@@ -156,7 +156,9 @@ func (m *Manager) Stop() error {
 		wg.Add(1)
 		go func(p *Process) {
 			defer wg.Done()
-			m.StopProcess(p.Name)
+			if err := m.StopProcess(p.Name); err != nil {
+				log.Printf("⚠️ Failed to stop process %s: %v", p.Name, err)
+			}
 		}(proc)
 	}
 
@@ -350,8 +352,8 @@ func (m *Manager) StopProcess(name string) error {
 
 		// 여전히 실행 중이면 강제 종료
 		if m.isProcessRunning(currentPID) {
-			log.Printf("🔨 Force killing process %s (PID: %d)", name, currentPID)
-			syscall.Kill(currentPID, syscall.SIGKILL)
+							log.Printf("🔨 Force killing process %s (PID: %d)", name, currentPID)
+			_ = syscall.Kill(currentPID, syscall.SIGKILL)
 			time.Sleep(1 * time.Second)
 		}
 	} else {
@@ -375,8 +377,8 @@ func (m *Manager) StopProcess(name string) error {
 				}
 			case <-time.After(10 * time.Second):
 				// 강제 종료
-				log.Printf("🔨 Force killing process %s", name)
-				cmd.Process.Kill()
+								log.Printf("🔨 Force killing process %s", name)
+				_ = cmd.Process.Kill()
 				<-done // Wait for the process to actually exit
 			}
 		}
@@ -433,12 +435,12 @@ func (m *Manager) RestartProcess(name string) error {
 	// 외부 프로세스의 경우 supervisor callback 사용
 	if processType == TypeExternal && m.externalServiceRestarter != nil {
 		log.Printf("🔄 Restarting external service: %s", name)
-		
+
 		// 상태를 restarting으로 설정
 		process.mutex.Lock()
 		process.State = StateRestarting
 		process.mutex.Unlock()
-		
+
 		// supervisor를 통해 외부 서비스 재시작
 		if err := m.externalServiceRestarter(name); err != nil {
 			process.mutex.Lock()
@@ -447,7 +449,7 @@ func (m *Manager) RestartProcess(name string) error {
 			process.mutex.Unlock()
 			return fmt.Errorf("failed to restart external service %s: %w", name, err)
 		}
-		
+
 		log.Printf("✅ External service %s restarted successfully", name)
 		return nil
 	}
@@ -462,7 +464,7 @@ func (m *Manager) RestartProcess(name string) error {
 			time.Sleep(3 * time.Second)
 			if m.isProcessRunning(currentPID) {
 				log.Printf("🔨 Force killing process %s (PID: %d)", name, currentPID)
-				syscall.Kill(currentPID, syscall.SIGKILL)
+				_ = syscall.Kill(currentPID, syscall.SIGKILL)
 			}
 		}
 
@@ -910,7 +912,7 @@ func (m *Manager) handleProcessStart(conn *ipc.Connection, msg *ipc.Message) *ip
 		return ipc.NewResponse(msg.ID, false, nil, err.Error())
 	}
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"component": component,
 		"action":    "started",
 	}, "")
@@ -927,7 +929,7 @@ func (m *Manager) handleProcessStop(conn *ipc.Connection, msg *ipc.Message) *ipc
 		return ipc.NewResponse(msg.ID, false, nil, err.Error())
 	}
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"component": component,
 		"action":    "stopped",
 	}, "")
@@ -944,7 +946,7 @@ func (m *Manager) handleProcessRestart(conn *ipc.Connection, msg *ipc.Message) *
 		return ipc.NewResponse(msg.ID, false, nil, err.Error())
 	}
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"component": component,
 		"action":    "restarted",
 	}, "")
@@ -982,7 +984,7 @@ func (m *Manager) captureExternalServiceLogs(process *Process) {
 	process.mutex.Unlock()
 
 	var logSources []string
-	
+
 	// Define log sources for each external service
 	switch process.Name {
 	case "postgresql":
@@ -1067,8 +1069,8 @@ func (m *Manager) capturePostgreSQLLogs(process *Process, pid int) {
 						continue
 					}
 					level := logger.LogLevelInfo
-					if strings.Contains(strings.ToLower(line), "error") || 
-					   strings.Contains(strings.ToLower(line), "fatal") {
+					if strings.Contains(strings.ToLower(line), "error") ||
+						strings.Contains(strings.ToLower(line), "fatal") {
 						level = logger.LogLevelError
 					}
 					m.logManager.WriteLog(process.Name, level, line)
@@ -1145,7 +1147,7 @@ func (m *Manager) tailLogFile(process *Process, logPath string) {
 
 	// Create a scanner to read lines
 	scanner := bufio.NewScanner(file)
-	
+
 	// Monitor the file for new content
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -1171,13 +1173,13 @@ func (m *Manager) tailLogFile(process *Process, logPath string) {
 					// Determine log level based on content
 					level := logger.LogLevelInfo
 					lowerLine := strings.ToLower(line)
-					if strings.Contains(lowerLine, "error") || 
-					   strings.Contains(lowerLine, "fatal") {
+					if strings.Contains(lowerLine, "error") ||
+						strings.Contains(lowerLine, "fatal") {
 						level = logger.LogLevelError
 					} else if strings.Contains(lowerLine, "warn") {
 						level = logger.LogLevelWarn
 					}
-					
+
 					m.logManager.WriteLog(process.Name, level, line)
 				}
 			}
@@ -1314,7 +1316,7 @@ func (m *Manager) isServiceProcess(pid int, serviceName string) bool {
 // captureFromFD tries to capture output from a process file descriptor
 func (m *Manager) captureFromFD(process *Process, pid int, fd int, fdName string) {
 	fdPath := fmt.Sprintf("/proc/%d/fd/%d", pid, fd)
-	
+
 	// Try to open the file descriptor (this may not work for all processes)
 	file, err := os.Open(fdPath)
 	if err != nil {

@@ -1,0 +1,91 @@
+      </main>
+      </div>
+      </div>
+      <!-- 전역 JavaScript -->
+      <script>
+        // 사이드바, 메뉴 상태 항상 닫힘으로 강제
+        localStorage.setItem('sidebarCollapsed', 'true');
+        localStorage.setItem('categoriesOpen', 'false');
+        localStorage.setItem('adminMenuOpen', 'false');
+
+        // 조직 전환 함수
+        // [중복] common.js에 이미 존재하므로 삭제
+        // async function switchOrganization(orgId) {
+        //   try {
+        //     const response = await fetch('/api/manage/session/organization', {
+        //       method: 'POST',
+        //       headers: {
+        //         'Content-Type': 'application/json'
+        //       },
+        //       body: JSON.stringify({
+        //         organization_id: orgId
+        //       })
+        //     });
+        //
+        //     if (response.ok) {
+        //       // 조직 전환 성공 시, 새 org_id를 쿼리 파라미터로 사용하여 대시보드로 이동
+        //       window.location.href = '/dashboard?org_id=' + orgId;
+        //     } else if (response.status === 401 || response.status === 403) {
+        //       // 인증 오류 시 로그인 페이지로 리디렉션
+        //       window.location.href = '/login';
+        //     } else {
+        //       console.error('조직 전환 실패');
+        //       alert('조직을 전환하는데 실패했습니다.');
+        //     }
+        //   } catch (error) {
+        //     console.error('조직 전환 오류:', error);
+        //     alert('조직을 전환하는 중 오류가 발생했습니다.');
+        //   }
+        // }
+
+        // 자동 새로고침 (30초마다)
+        let autoRefreshInterval;
+
+        function startAutoRefresh() {
+          autoRefreshInterval = setInterval(() => {
+            if (typeof refreshPageData === 'function') {
+              refreshPageData();
+            }
+          }, 30000);
+        }
+
+        function stopAutoRefresh() {
+          if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+          }
+        }
+
+        // 페이지 로드 시 자동 새로고침 시작
+        document.addEventListener('DOMContentLoaded', startAutoRefresh);
+
+        // 페이지 언로드 시 자동 새로고침 정지
+        document.addEventListener('beforeunload', stopAutoRefresh);
+
+        // 쿼리스트링에서 org_id 추출 (없으면 default)
+        // [중복] common.js에서 관리하므로 삭제
+        // const urlParams = new URLSearchParams(window.location.search);
+        // window.currentOrgId = urlParams.get('org_id') || '{{if .Organization}}{{.Organization.OrgID}}{{else}}default{{end}}';
+      </script>
+      <script>
+        window.toast = function() {
+          return {
+            visible: false,
+            message: '',
+            type: 'success',
+            show(message, type = 'success') {
+              this.message = message;
+              this.type = type;
+              this.visible = true;
+              setTimeout(() => {
+                this.visible = false;
+              }, 3000);
+            }
+          }
+        }
+        document.addEventListener('alpine:init', () => {
+          Alpine.data('toast', window.toast);
+        });
+      </script>
+      </body>
+
+      </html>

@@ -1,0 +1,257 @@
+{{template "header" .}}
+
+<div x-data="tokensData()" x-init="init()" class="space-y-6">
+
+  <!-- 페이지 헤더 -->
+  <div class="flex items-center justify-between">
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">API 토큰 관리</h2>
+    <p class="text-gray-600 dark:text-gray-400">API 접근을 위한 토큰들을 관리하세요.</p>
+  </div>
+
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <div x-show="loading" class="text-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">로딩 중...</p>
+    </div>
+
+    <div x-show="!loading">
+      <div class="mb-4 flex items-center justify-between">
+        <input x-model="searchTerm" @input="filterTokens()" type="text" placeholder="토큰 검색..." class="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        <button @click="showCreateForm = true" class="ml-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+          새 토큰 생성
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <template x-for="token in filteredTokens" :key="token.token_id">
+          <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white" x-text="token.name"></h3>
+              <span class="px-2 py-1 text-xs rounded-full" :class="token.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200'" x-text="token.is_active ? '활성' : '비활성'"></span>
+            </div>
+            <div class="space-y-2 text-sm">
+              <p class="text-gray-600 dark:text-gray-400">
+                <span class="font-medium">소유자:</span>
+                <span x-text="token.owner_name"></span>
+              </p>
+              <p class="text-gray-600 dark:text-gray-400">
+                <span class="font-medium">권한:</span>
+                <span x-text="token.permissions.join(', ')"></span>
+              </p>
+              <p class="text-gray-600 dark:text-gray-400">
+                <span class="font-medium">만료일:</span>
+                <span x-text="token.expires_at ? window.formatDate(token.expires_at) : '무제한'"></span>
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400" x-text="window.formatDate(token.created_at)"></p>
+            </div>
+            <div class="mt-4 flex space-x-2">
+              <button @click="copyToken(token.token_id)" class="flex-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700">
+                토큰 복사
+              </button>
+              <button @click="toggleToken(token.token_id)" class="px-3 py-1 text-sm border rounded" :class="token.is_active ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20' : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/20'" x-text="token.is_active ? '비활성화' : '활성화'"></button>
+              <button @click="deleteToken(token.token_id)" class="px-3 py-1 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20">
+                삭제
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div x-show="filteredTokens.length === 0" class="text-center py-8">
+        <p class="text-gray-500 dark:text-gray-400">토큰이 없습니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 토큰 생성 폼 (모달) -->
+  <div x-show="showCreateForm" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="showCreateForm = false">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">새 API 토큰 생성</h3>
+      <form @submit.prevent="createToken()">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">토큰 이름</label>
+          <input x-model="tokenForm.name" type="text" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">소유자</label>
+          <select x-model="tokenForm.owner_id" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="">사용자 선택</option>
+            <template x-for="user in users" :key="user.user_id">
+              <option :value="user.user_id" x-text="user.username"></option>
+            </template>
+          </select>
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">권한</label>
+          <div class="space-y-2">
+            <label class="flex items-center">
+              <input x-model="tokenForm.permissions" type="checkbox" value="read" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+              <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">읽기</span>
+            </label>
+            <label class="flex items-center">
+              <input x-model="tokenForm.permissions" type="checkbox" value="write" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+              <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">쓰기</span>
+            </label>
+            <label class="flex items-center">
+              <input x-model="tokenForm.permissions" type="checkbox" value="admin" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+              <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">관리자</span>
+            </label>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">만료일 (선택사항)</label>
+          <input x-model="tokenForm.expires_at" type="datetime-local" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <div class="flex justify-end space-x-2">
+          <button type="button" @click="showCreateForm = false" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+            취소
+          </button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            생성
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 토큰 표시 모달 -->
+  <div x-show="showTokenModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="showTokenModal = false">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">API 토큰</h3>
+      <div class="mb-4">
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">이 토큰은 한 번만 표시됩니다. 안전한 곳에 저장하세요.</p>
+        <div class="bg-gray-100 dark:bg-gray-700 p-3 rounded-md">
+          <code class="text-sm break-all" x-text="generatedToken"></code>
+        </div>
+      </div>
+      <div class="flex justify-end">
+        <button @click="showTokenModal = false" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          확인
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+  function tokensData() {
+    const orgId = new URLSearchParams(window.location.search).get('org_id') || '{{.Organization.OrgID}}' || 'default';
+    return {
+      loading: false,
+      showCreateForm: false,
+      showTokenModal: false,
+      tokens: [],
+      filteredTokens: [],
+      users: [],
+      searchTerm: '',
+      tokenForm: {
+        name: '',
+        owner_id: '',
+        permissions: [],
+        expires_at: ''
+      },
+      generatedToken: '',
+
+      async init() {
+        await Promise.all([
+          this.loadTokens(),
+          this.loadUsers()
+        ]);
+      },
+
+      async loadTokens() {
+        this.loading = true;
+        try {
+          const response = await apiCall('/api/manage/admin_tokens');
+          this.tokens = response.data.tokens || [];
+          this.filterTokens();
+        } catch (error) {
+          console.error('Failed to load tokens:', error);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async loadUsers() {
+        try {
+          const response = await apiCall('/api/manage/users');
+          this.users = response.data.users || [];
+        } catch (error) {
+          console.error('Failed to load users:', error);
+        }
+      },
+
+      filterTokens() {
+        if (!this.searchTerm) {
+          this.filteredTokens = this.tokens;
+        } else {
+          this.filteredTokens = this.tokens.filter(token =>
+            token.name.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
+            token.owner_name.toLowerCase().includes(this.searchTerm.toLowerCase())
+          );
+        }
+      },
+
+      async createToken() {
+        try {
+          const response = await apiCall('/api/manage/admin_tokens', 'POST', {
+            ...this.tokenForm,
+            permissions: this.tokenForm.permissions
+          });
+          this.generatedToken = response.data.token;
+          this.showTokenModal = true;
+          this.showCreateForm = false;
+          await this.loadTokens();
+          this.resetForm();
+        } catch (error) {
+          console.error('Failed to create token:', error);
+        }
+      },
+
+      async copyToken(tokenId) {
+        try {
+          const response = await apiCall(`/api/manage/admin_tokens/${tokenId}/copy`, 'POST');
+          this.generatedToken = response.data.token;
+          this.showTokenModal = true;
+        } catch (error) {
+          console.error('Failed to copy token:', error);
+        }
+      },
+
+      async toggleToken(tokenId) {
+        try {
+          const response = await apiCall(`/api/manage/admin_tokens/${tokenId}/toggle`, 'POST');
+          const token = this.tokens.find(t => t.token_id === tokenId);
+          if (token) {
+            token.is_active = response.data.is_active;
+          }
+        } catch (error) {
+          console.error('Failed to toggle token:', error);
+        }
+      },
+
+      async deleteToken(tokenId) {
+        if (confirm('정말로 이 토큰을 삭제하시겠습니까?')) {
+          try {
+            await apiCall(`/api/manage/admin_tokens/${tokenId}`, 'DELETE');
+            await this.loadTokens();
+          } catch (error) {
+            console.error('Failed to delete token:', error);
+          }
+        }
+      },
+
+      resetForm() {
+        this.tokenForm = {
+          name: '',
+          owner_id: '',
+          permissions: [],
+          expires_at: ''
+        };
+      },
+    }
+  }
+</script>
+
+{{template "footer" .}}

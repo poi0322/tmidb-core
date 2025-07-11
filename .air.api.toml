@@ -5,8 +5,8 @@ tmp_dir = "tmp"
 
 [build]
 args_bin = []
-bin = "./tmp/tmidb-api"
-cmd = "go build -o ./tmp/tmidb-api ./cmd/api"
+bin = "./bin/tmidb-api"
+cmd = "go build -o ./bin/tmidb-api ./cmd/api"
 delay = 1000
 exclude_dir = ["assets", "tmp", "vendor", "testdata", "views", "data", "logs", ".git"]
 exclude_file = []

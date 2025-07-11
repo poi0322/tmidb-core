@@ -73,7 +73,7 @@ var logsCmd = &cobra.Command{
 			fmt.Printf("📄 Recent logs for: %s\n", component)
 
 			// 최근 로그 요청
-			resp, err := client.SendMessage(ipc.MessageTypeGetLogs, map[string]interface{}{
+			resp, err := client.SendMessage(ipc.MessageTypeGetLogs, map[string]any{
 				"component": component,
 				"lines":     50, // 최근 50줄
 			})
@@ -88,9 +88,9 @@ var logsCmd = &cobra.Command{
 			}
 
 			// 로그 출력
-			if logs, ok := resp.Data.([]interface{}); ok {
+			if logs, ok := resp.Data.([]any); ok {
 				for _, log := range logs {
-					if logMap, ok := log.(map[string]interface{}); ok {
+					if logMap, ok := log.(map[string]any); ok {
 						timestamp := logMap["timestamp"].(string)
 						process := logMap["process"].(string)
 						message := logMap["message"].(string)
@@ -171,7 +171,7 @@ var logsStatusCmd = &cobra.Command{
 				fmt.Printf("%-18s │ %s %-12s │ %-20s\n", component, statusIcon, statusText, description)
 			}
 		}
-		
+
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 }
@@ -250,7 +250,7 @@ Examples:
 		}
 
 		// 로그 요청
-		filters := map[string]interface{}{
+		filters := map[string]any{
 			"component": component,
 			"lines":     logLines,
 		}
@@ -276,10 +276,10 @@ Examples:
 		}
 
 		// 로그 필터링 및 출력
-		if logs, ok := resp.Data.([]interface{}); ok {
+		if logs, ok := resp.Data.([]any); ok {
 			filteredCount := 0
 			for _, log := range logs {
-				if logMap, ok := log.(map[string]interface{}); ok {
+				if logMap, ok := log.(map[string]any); ok {
 					// 로그 레벨 필터링
 					if logLevel != "" && !matchLogLevel(logMap["level"].(string), logLevel) {
 						continue
@@ -335,7 +335,7 @@ var logsSearchCmd = &cobra.Command{
 		}
 
 		// 로그 요청
-		resp, err := client.SendMessage(ipc.MessageTypeGetLogs, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeGetLogs, map[string]any{
 			"component": component,
 			"lines":     1000, // 검색을 위해 더 많은 로그 가져오기
 		})
@@ -350,10 +350,10 @@ var logsSearchCmd = &cobra.Command{
 		}
 
 		// 검색 및 출력
-		if logs, ok := resp.Data.([]interface{}); ok {
+		if logs, ok := resp.Data.([]any); ok {
 			matches := 0
 			for _, log := range logs {
-				if logMap, ok := log.(map[string]interface{}); ok {
+				if logMap, ok := log.(map[string]any); ok {
 					message := logMap["message"].(string)
 					if patternRegex.MatchString(message) {
 						timestamp := logMap["timestamp"].(string)

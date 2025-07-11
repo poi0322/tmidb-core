@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"runtime"
 	"sync"
@@ -106,7 +107,7 @@ func (c *Client) Close() error {
 }
 
 // SendMessage 메시지 전송
-func (c *Client) SendMessage(msgType MessageType, data map[string]interface{}) (*Response, error) {
+func (c *Client) SendMessage(msgType MessageType, data map[string]any) (*Response, error) {
 	// CLI 명령어의 경우 새로운 연결 생성
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
@@ -120,16 +121,19 @@ func (c *Client) SendMessage(msgType MessageType, data map[string]interface{}) (
 	msg := NewMessage(msgType, data)
 
 	// JSON 직렬화
-	msgData, err := msg.ToJSON()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal message: %w", err)
-	}
+    msgData, err := msg.ToJSON()
+    if err != nil {
+        return nil, fmt.Errorf("failed to marshal message: %w", err)
+    }
 
-	// 쓰기 타임아웃 설정
-	conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+    // 쓰기 타임아웃 설정
+    if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
+        _ = conn.Close()
+        return nil, fmt.Errorf("failed to set write deadline: %w", err)
+    }
 
-	// 메시지 전송
-	_, err = writer.Write(append(msgData, '\n'))
+    // 메시지 전송
+    _, err = writer.Write(append(msgData, '\n'))
 	if err != nil {
 		return nil, fmt.Errorf("failed to send message: %w", err)
 	}
@@ -176,7 +180,7 @@ func (c *Client) SendMessage(msgType MessageType, data map[string]interface{}) (
 }
 
 // SendMessageAsync 비동기 메시지 전송
-func (c *Client) SendMessageAsync(msgType MessageType, data map[string]interface{}) error {
+func (c *Client) SendMessageAsync(msgType MessageType, data map[string]any) error {
 	if !c.isConnected() {
 		if err := c.Connect(); err != nil {
 			return err
@@ -196,7 +200,7 @@ func (c *Client) StreamLogs(component string) (<-chan LogEntry, error) {
 	}
 
 	// 로그 스트림 요청
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": component,
 		"action":    "start",
 	}
@@ -239,7 +243,9 @@ func (c *Client) sendMessage(msg *Message) error {
 	}
 
 	// 쓰기 타임아웃 설정
-	conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
+		return fmt.Errorf("failed to set write deadline: %w", err)
+	}
 
 	// 메시지 전송 (개행 문자 추가)
 	_, err = writer.Write(append(data, '\n'))
@@ -269,7 +275,10 @@ func (c *Client) handleResponses() {
 		}
 
 		// 읽기 타임아웃 설정
-		c.conn.SetReadDeadline(time.Now().Add(ReadTimeout))
+		if err := c.conn.SetReadDeadline(time.Now().Add(ReadTimeout)); err != nil {
+			log.Printf("⚠️ Failed to set read deadline in handleResponses: %v", err)
+			return
+		}
 
 		// 응답 읽기
 		line, err := c.reader.ReadString('\n')
@@ -289,6 +298,7 @@ func (c *Client) handleResponses() {
 		// 응답 파싱
 		var resp Response
 		if err := json.Unmarshal([]byte(line), &resp); err != nil {
+			log.Printf("⚠️ Failed to unmarshal response: %v", err)
 			continue // 파싱 오류 무시
 		}
 
@@ -323,16 +333,19 @@ func (c *Client) handleLogStream(logChan chan<- LogEntry) {
 		}
 
 		// 로그 엔트리 읽기
-		line, err := c.reader.ReadString('\n')
-		c.connMux.RUnlock()
+        line, err := c.reader.ReadString('\n')
+        c.connMux.RUnlock()
 
-		if err != nil {
-			return
-		}
+        if err != nil {
+            // 연결이 끊어졌거나 오류 발생 시 고루틴 종료
+            log.Printf("⚠️ Error reading from log stream: %v", err)
+            return
+        }
 
 		// 로그 엔트리 파싱 시도
 		var logEntry LogEntry
 		if err := json.Unmarshal([]byte(line), &logEntry); err != nil {
+			log.Printf("⚠️ Failed to unmarshal log entry: %v", err)
 			continue // 로그가 아닌 다른 메시지일 수 있음
 		}
 
@@ -373,7 +386,7 @@ func (c *Client) Ping() error {
 
 // EnableLogs enables logging for a specific component
 func (c *Client) EnableLogs(component string) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": component,
 	}
 
@@ -391,7 +404,7 @@ func (c *Client) EnableLogs(component string) error {
 
 // DisableLogs disables logging for a specific component
 func (c *Client) DisableLogs(component string) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": component,
 	}
 
@@ -409,7 +422,7 @@ func (c *Client) DisableLogs(component string) error {
 
 // GetLogStatus gets the logging status for all components
 func (c *Client) GetLogStatus() (map[string]bool, error) {
-	resp, err := c.SendMessage(MessageTypeLogStatus, map[string]interface{}{})
+	resp, err := c.SendMessage(MessageTypeLogStatus, map[string]any{})
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +433,7 @@ func (c *Client) GetLogStatus() (map[string]bool, error) {
 
 	// Convert response data to map[string]bool
 	status := make(map[string]bool)
-	if dataMap, ok := resp.Data.(map[string]interface{}); ok {
+	if dataMap, ok := resp.Data.(map[string]any); ok {
 		for component, enabled := range dataMap {
 			if enabledBool, ok := enabled.(bool); ok {
 				status[component] = enabledBool
@@ -452,10 +465,10 @@ func (c *Client) GetProcessList() ([]ProcessInfo, error) {
 	}
 
 	// 응답 데이터를 []ProcessInfo로 변환
-	if dataList, ok := resp.Data.([]interface{}); ok {
+	if dataList, ok := resp.Data.([]any); ok {
 		var processes []ProcessInfo
 		for _, item := range dataList {
-			if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap, ok := item.(map[string]any); ok {
 				// JSON 재직렬화/역직렬화를 통한 변환
 				jsonData, _ := json.Marshal(itemMap)
 				var process ProcessInfo
@@ -472,7 +485,7 @@ func (c *Client) GetProcessList() ([]ProcessInfo, error) {
 
 // RestartProcess 프로세스 재시작
 func (c *Client) RestartProcess(component string) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": component,
 	}
 
@@ -490,7 +503,7 @@ func (c *Client) RestartProcess(component string) error {
 
 // StopProcess 프로세스 정지
 func (c *Client) StopProcess(component string) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": component,
 	}
 
@@ -508,7 +521,7 @@ func (c *Client) StopProcess(component string) error {
 
 // StartProcess 프로세스 시작
 func (c *Client) StartProcess(component string) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": component,
 	}
 

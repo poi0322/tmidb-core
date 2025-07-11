@@ -27,6 +27,7 @@ func main() {
 	if err := database.ConnectDatabase(cfg); err != nil {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
+
 	defer database.Close()
 
 	// 컨텍스트 생성

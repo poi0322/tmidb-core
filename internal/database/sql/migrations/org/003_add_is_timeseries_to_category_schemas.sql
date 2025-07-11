@@ -1,0 +1,1 @@
+ALTER TABLE public.category_schemas ADD COLUMN is_timeseries BOOLEAN NOT NULL DEFAULT FALSE; 

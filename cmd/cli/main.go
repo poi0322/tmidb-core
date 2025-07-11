@@ -70,7 +70,7 @@ var monitorSystemCmd = &cobra.Command{
 				}
 
 				// 통계 출력
-				if stats, ok := resp.Data.(map[string]interface{}); ok {
+				if stats, ok := resp.Data.(map[string]any); ok {
 					currentTime := time.Now().Format("15:04:05")
 
 					// 프로세스 정보
@@ -188,7 +188,7 @@ var monitorHealthCmd = &cobra.Command{
 			}
 		}
 
-		healthSummary := map[string]interface{}{
+		healthSummary := map[string]any{
 			"supervisor_status":    "healthy",
 			"total_components":     total,
 			"healthy_components":   healthy,
@@ -248,10 +248,10 @@ var statusCmd = &cobra.Command{
 
 		// JSON/YAML 출력인 경우 구조화된 데이터 출력
 		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
-			statusData := make(map[string]interface{})
+			statusData := make(map[string]any)
 			for _, component := range components {
 				if process, exists := processMap[component]; exists {
-					statusData[component] = map[string]interface{}{
+					statusData[component] = map[string]any{
 						"status":     process.Status,
 						"pid":        process.PID,
 						"uptime":     process.Uptime.String(),
@@ -260,7 +260,7 @@ var statusCmd = &cobra.Command{
 						"start_time": process.StartTime,
 					}
 				} else {
-					statusData[component] = map[string]interface{}{
+					statusData[component] = map[string]any{
 						"status": "not found",
 						"pid":    0,
 						"uptime": "0s",
@@ -282,21 +282,21 @@ var statusCmd = &cobra.Command{
 		fmt.Printf("%-18s │ %-10s │ %-10s │ %-8s │ %-12s │ %-10s │ %-8s\n",
 			"COMPONENT", "STATUS", "TYPE", "PID", "UPTIME", "MEMORY", "CPU")
 		fmt.Println("──────────────────┼────────────┼────────────┼──────────┼──────────────┼────────────┼──────────")
-		
+
 		// 외부 서비스 먼저 표시
 		externalServices := []string{"postgresql", "nats", "seaweedfs"}
 		for _, component := range externalServices {
 			printComponentStatus(component, processMap)
 		}
-		
+
 		fmt.Println("──────────────────┼────────────┼────────────┼──────────┼──────────────┼────────────┼──────────")
-		
+
 		// 내부 서비스 표시
 		internalServices := []string{"api", "data-manager", "data-consumer"}
 		for _, component := range internalServices {
 			printComponentStatus(component, processMap)
 		}
-		
+
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 }
@@ -324,9 +324,9 @@ var serviceListCmd = &cobra.Command{
 
 		// JSON/YAML 출력인 경우
 		if format, _ := cmd.Flags().GetString("output"); format == "json" || format == "json-pretty" || format == "yaml" {
-			serviceData := make(map[string]interface{})
+			serviceData := make(map[string]any)
 			for _, proc := range processes {
-				serviceData[proc.Name] = map[string]interface{}{
+				serviceData[proc.Name] = map[string]any{
 					"status": proc.Status,
 					"pid":    proc.PID,
 					"type":   getServiceType(proc.Name),
@@ -480,7 +480,7 @@ func formatBytes(bytes int64) string {
 }
 
 // 헬퍼 함수들
-func getIntValue(data map[string]interface{}, key string) int {
+func getIntValue(data map[string]any, key string) int {
 	if val, ok := data[key]; ok {
 		if intVal, ok := val.(float64); ok {
 			return int(intVal)
@@ -492,7 +492,7 @@ func getIntValue(data map[string]interface{}, key string) int {
 	return 0
 }
 
-func getFloatValue(data map[string]interface{}, key string) float64 {
+func getFloatValue(data map[string]any, key string) float64 {
 	if val, ok := data[key]; ok {
 		if floatVal, ok := val.(float64); ok {
 			return floatVal
@@ -545,14 +545,14 @@ func printComponentStatus(component string, processMap map[string]*ipc.ProcessIn
 		// 프로세스 정보가 없는 경우
 		statusIcon := getStatusIcon("not found")
 		serviceType := getServiceType(component)
-		
+
 		fmt.Printf("%s %-15s │ %-10s │ %-10s │ %-8s │ %-12s │ %-10s │ %-8s\n",
 			statusIcon, component, "not found", serviceType, "-", "-", "-", "-")
 	}
 }
 
 func startService(serviceName string) error {
-	data := map[string]interface{}{"name": serviceName}
+	data := map[string]any{"name": serviceName}
 	resp, err := client.SendMessage(ipc.MessageTypeProcessStart, data)
 	if err != nil {
 		return err
@@ -564,7 +564,7 @@ func startService(serviceName string) error {
 }
 
 func stopService(serviceName string) error {
-	data := map[string]interface{}{"name": serviceName}
+	data := map[string]any{"name": serviceName}
 	resp, err := client.SendMessage(ipc.MessageTypeProcessStop, data)
 	if err != nil {
 		return err
@@ -576,7 +576,7 @@ func stopService(serviceName string) error {
 }
 
 func restartService(serviceName string) error {
-	data := map[string]interface{}{"name": serviceName}
+	data := map[string]any{"name": serviceName}
 	resp, err := client.SendMessage(ipc.MessageTypeProcessRestart, data)
 	if err != nil {
 		return err
@@ -588,7 +588,7 @@ func restartService(serviceName string) error {
 }
 
 func getServiceLogs(serviceName string, lines int) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": serviceName,
 		"lines":     lines,
 	}
@@ -601,9 +601,9 @@ func getServiceLogs(serviceName string, lines int) error {
 	}
 
 	// 로그 출력
-	if logs, ok := resp.Data.([]interface{}); ok {
+	if logs, ok := resp.Data.([]any); ok {
 		for _, logEntry := range logs {
-			if logMap, ok := logEntry.(map[string]interface{}); ok {
+			if logMap, ok := logEntry.(map[string]any); ok {
 				timestamp := logMap["timestamp"]
 				message := logMap["message"]
 				fmt.Printf("[%v] %v\n", timestamp, message)
@@ -615,7 +615,7 @@ func getServiceLogs(serviceName string, lines int) error {
 
 func streamServiceLogs(serviceName string) error {
 	// 실시간 로그 스트리밍 구현
-	data := map[string]interface{}{
+	data := map[string]any{
 		"component": serviceName,
 		"action":    "start",
 	}

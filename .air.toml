@@ -2,21 +2,23 @@
 
 # Working directory
 root = "."
+testdata_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
 # Command to build the main application binary.
 # We build the supervisor, which in turn manages all other processes.
-cmd = "go build -o ./tmp/tmidb-supervisor ./cmd/supervisor"
+cmd = "./scripts/build.sh supervisor"
 
 # The binary to run after building.
-bin = "tmp/tmidb-supervisor"
+# In development mode, binaries are built to ./bin directory
+bin = "./bin/tmidb-supervisor"
 
 # Watch these file extensions.
-include_ext = ["go", "toml", "json", "html", "css"]
+include_ext = ["go", "tpl", "tmpl", "html"]
 
 # Ignore these directories.
-exclude_dir = ["tmp", "vendor", "data", "logs"]
+exclude_dir = ["assets", "tmp", "vendor", "testdata", "docker-run", "todoList"]
 
 # Trigger a build on new file creation.
 include_file = []
@@ -26,8 +28,12 @@ delay = 1000
 
 [log]
 # Show log time
-time = true
+time = false
 
 [misc]
 # Delete tmp directory on exit
-clean_on_exit = true
+clean_on_exit = false
+
+[screen]
+clear_on_rebuild = false
+keep_scroll = true

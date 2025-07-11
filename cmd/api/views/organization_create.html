@@ -1,0 +1,90 @@
+{{template "header" .}}
+
+<div x-data="organizationCreateData()" class="max-w-4xl mx-auto py-10">
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">새 조직 생성</h2>
+    <a href="/organization" class="text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">
+      &larr; 목록으로 돌아가기
+    </a>
+  </div>
+
+  <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-8">
+    <form @submit.prevent="createOrganization">
+      <div class="space-y-6">
+        <div>
+          <label for="org-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">조직 이름</label>
+          <div class="mt-1">
+            <input type="text" x-model="orgName" id="org-name" class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="예: Fine Nurse Project">
+          </div>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">조직의 이름을 입력하세요. 이 이름은 나중에 변경할 수 있습니다.</p>
+        </div>
+
+        <div>
+          <label for="admin-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">초대할 관리자 이메일 (선택 사항)</label>
+          <div class="mt-1">
+            <input type="email" x-model="adminEmail" id="admin-username" class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="admin@example.com">
+          </div>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">이 조직을 관리할 사용자를 이메일로 초대할 수 있습니다.</p>
+        </div>
+      </div>
+
+      <div class="mt-8 border-t border-gray-200 dark:border-gray-700 pt-5">
+        <div class="flex justify-end">
+          <button type="button" @click="window.location.href='/organization'" class="rounded-md border border-gray-300 bg-white py-2 px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            취소
+          </button>
+          <button type="submit" class="ml-3 inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" :disabled="loading" :class="{ 'opacity-50 cursor-not-allowed': loading }">
+            <span x-show="!loading">조직 생성</span>
+            <span x-show="loading">생성 중...</span>
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <!-- 결과 메시지 -->
+    <div x-show="message" :class="{ 'text-green-600': success, 'text-red-600': !success }" class="mt-4 text-sm" x-text="message"></div>
+  </div>
+</div>
+<script src="/static/js/common.js"></script>
+<script>
+  function organizationCreateData() {
+    return {
+      orgName: '',
+      adminEmail: '',
+      loading: false,
+      message: '',
+      success: false,
+      createOrganization() {
+        if (!this.orgName) {
+          this.message = '조직 이름은 필수입니다.';
+          this.success = false;
+          return;
+        }
+
+        this.loading = true;
+        this.message = '';
+
+        apiCall('/api/manage/organizations', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: this.orgName,
+            admin_email: this.adminEmail
+          })
+        }).then(data => {
+          this.success = true;
+          this.message = `조직 '${this.orgName}'이(가) 성공적으로 생성되었습니다.`;
+          setTimeout(() => {
+            window.location.href = '/organization';
+          }, 2000);
+        }).catch(error => {
+          this.success = false;
+          this.message = `생성 실패: ${error.message}`;
+        }).finally(() => {
+          this.loading = false;
+        });
+      }
+    }
+  }
+</script>
+
+{{template "footer" .}}

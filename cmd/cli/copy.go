@@ -27,7 +27,7 @@ var copyReceiveCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		path, _ := cmd.Flags().GetString("path")
 
-		data := map[string]interface{}{
+		data := map[string]any{
 			"port": port,
 			"path": path,
 		}
@@ -43,7 +43,7 @@ var copyReceiveCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if sessionData, ok := resp.Data.(map[string]interface{}); ok {
+		if sessionData, ok := resp.Data.(map[string]any); ok {
 			sessionID := sessionData["id"].(string)
 			actualPort := int(sessionData["port"].(float64))
 			actualPath := sessionData["path"].(string)
@@ -80,7 +80,7 @@ var copySendCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		data := map[string]interface{}{
+		data := map[string]any{
 			"file_path":   filePath,
 			"target_host": targetHost,
 			"target_port": targetPort,
@@ -97,7 +97,7 @@ var copySendCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if sessionData, ok := resp.Data.(map[string]interface{}); ok {
+		if sessionData, ok := resp.Data.(map[string]any); ok {
 			sessionID := sessionData["id"].(string)
 			fileSize := int64(sessionData["file_size"].(float64))
 
@@ -121,7 +121,7 @@ var copyStatusCmd = &cobra.Command{
 			sessionID = args[0]
 		}
 
-		data := map[string]interface{}{}
+		data := map[string]any{}
 		if sessionID != "" {
 			data["session_id"] = sessionID
 		}
@@ -139,14 +139,14 @@ var copyStatusCmd = &cobra.Command{
 
 		// 단일 세션 상태 표시
 		if sessionID != "" {
-			if sessionData, ok := resp.Data.(map[string]interface{}); ok {
+			if sessionData, ok := resp.Data.(map[string]any); ok {
 				displaySingleSession(sessionData)
 			}
 			return
 		}
 
 		// 모든 세션 상태 표시
-		if sessions, ok := resp.Data.([]interface{}); ok {
+		if sessions, ok := resp.Data.([]any); ok {
 			if len(sessions) == 0 {
 				fmt.Println("📭 No active copy sessions")
 				return
@@ -159,7 +159,7 @@ var copyStatusCmd = &cobra.Command{
 			fmt.Println("────────────────────────────────────────────────────────────────────────────────────────")
 
 			for _, session := range sessions {
-				if sessionMap, ok := session.(map[string]interface{}); ok {
+				if sessionMap, ok := session.(map[string]any); ok {
 					displaySessionRow(sessionMap)
 				}
 			}
@@ -183,7 +183,7 @@ var copyListCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if sessions, ok := resp.Data.([]interface{}); ok {
+		if sessions, ok := resp.Data.([]any); ok {
 			if len(sessions) == 0 {
 				fmt.Println("📭 No copy sessions found")
 				return
@@ -193,7 +193,7 @@ var copyListCmd = &cobra.Command{
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 			for _, session := range sessions {
-				if sessionMap, ok := session.(map[string]interface{}); ok {
+				if sessionMap, ok := session.(map[string]any); ok {
 					displaySessionSummary(sessionMap)
 				}
 			}
@@ -209,7 +209,7 @@ var copyStopCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		sessionID := args[0]
 
-		data := map[string]interface{}{
+		data := map[string]any{
 			"session_id": sessionID,
 		}
 
@@ -229,7 +229,7 @@ var copyStopCmd = &cobra.Command{
 }
 
 // 헬퍼 함수들
-func displaySingleSession(sessionData map[string]interface{}) {
+func displaySingleSession(sessionData map[string]any) {
 	id := getCopyString(sessionData, "id")
 	mode := getCopyString(sessionData, "mode")
 	status := getCopyString(sessionData, "status")
@@ -266,7 +266,7 @@ func displaySingleSession(sessionData map[string]interface{}) {
 	}
 }
 
-func displaySessionRow(sessionData map[string]interface{}) {
+func displaySessionRow(sessionData map[string]any) {
 	id := getCopyString(sessionData, "id")
 	mode := getCopyString(sessionData, "mode")
 	status := getCopyString(sessionData, "status")
@@ -310,7 +310,7 @@ func displaySessionRow(sessionData map[string]interface{}) {
 		shortID, mode, status, port, pathTarget, progress, speedStr)
 }
 
-func displaySessionSummary(sessionData map[string]interface{}) {
+func displaySessionSummary(sessionData map[string]any) {
 	id := getCopyString(sessionData, "id")
 	mode := getCopyString(sessionData, "mode")
 	status := getCopyString(sessionData, "status")
@@ -341,7 +341,7 @@ func getCopyStatusIcon(status string) string {
 	}
 }
 
-func getCopyString(data map[string]interface{}, key string) string {
+func getCopyString(data map[string]any, key string) string {
 	if val, ok := data[key]; ok {
 		if str, ok := val.(string); ok {
 			return str
@@ -350,7 +350,7 @@ func getCopyString(data map[string]interface{}, key string) string {
 	return ""
 }
 
-func getCopyInt(data map[string]interface{}, key string) int {
+func getCopyInt(data map[string]any, key string) int {
 	if val, ok := data[key]; ok {
 		if num, ok := val.(float64); ok {
 			return int(num)
@@ -359,7 +359,7 @@ func getCopyInt(data map[string]interface{}, key string) int {
 	return 0
 }
 
-func getCopyInt64(data map[string]interface{}, key string) int64 {
+func getCopyInt64(data map[string]any, key string) int64 {
 	if val, ok := data[key]; ok {
 		if num, ok := val.(float64); ok {
 			return int64(num)
@@ -368,7 +368,7 @@ func getCopyInt64(data map[string]interface{}, key string) int64 {
 	return 0
 }
 
-func getCopyFloat64(data map[string]interface{}, key string) float64 {
+func getCopyFloat64(data map[string]any, key string) float64 {
 	if val, ok := data[key]; ok {
 		if num, ok := val.(float64); ok {
 			return num
@@ -380,7 +380,7 @@ func getCopyFloat64(data map[string]interface{}, key string) float64 {
 func init() {
 	// copy receive 플래그
 	copyReceiveCmd.Flags().IntP("port", "p", 8080, "Port to listen on")
-	copyReceiveCmd.Flags().StringP("path", "d", "/tmp/received", "Directory to save received files")
+	copyReceiveCmd.Flags().StringP("path", "d", "/bin/received", "Directory to save received files")
 
 	// copy 하위 명령어 추가
 	copyCmd.AddCommand(copyReceiveCmd)

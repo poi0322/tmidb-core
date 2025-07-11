@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	log.Println("🚀 Starting tmiDB Supervisor...")
+	log.Println("🚀 Starting tmiDB Supervisor... [Hot Reload Test]")
 
 	// Create supervisor with default config
 	config := supervisor.DefaultConfig()

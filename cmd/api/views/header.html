@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko" x-data="{ sidebarOpen: false, darkMode: localStorage.getItem('darkMode') === 'true', categoriesOpen: false, adminMenuOpen: false }" :class="{ 'dark': darkMode }">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} - tmiDB</title>
+  <script src="/static/js/tailwindcss.js" defer></script> <!-- 개발 환경에서만 사용, 운영 배포시 제거 -->
+  <script src="/static/js/common.js" defer></script>
+  <script src="/static/js/alpine.min.js" defer></script>
+  <script src="/static/js/chart.min.js" defer></script>
+  <style>
+    /* 사이드바 애니메이션 */
+    .sidebar-transition {
+      transition: transform 0.3s ease-in-out;
+    }
+
+    /* 커스텀 스크롤바 */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #c1c1c1;
+      border-radius: 3px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #a8a8a8;
+    }
+
+    [x-cloak] {
+      display: none !important;
+    }
+
+    /* 데스크톱에서 사이드바 기본적으로 숨김 */
+    @media (min-width: 1024px) {
+      .sidebar {
+        position: fixed !important;
+        transform: translateX(-100%) !important;
+        display: block !important;
+      }
+
+      .sidebar.translate-x-0 {
+        transform: translateX(0) !important;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-gray-100 dark:bg-gray-900 font-sans leading-normal tracking-normal">
+  <!-- Toast Notification -->
+  <div x-data="toast()" x-show="visible" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform translate-y-2" class="fixed top-5 right-5 z-50">
+    <div class="px-4 py-2 rounded-md shadow-lg text-white" :class="type === 'success' ? 'bg-green-500' : 'bg-red-500'">
+      <p x-text="message"></p>
+    </div>
+  </div>
+  <!-- API 토큰을 위한 메타 태그 (JavaScript에서 사용) -->
+  <meta name="api-token" content="{{.APIToken}}">
+  <div x-data="{ sidebarOpen: false }" class="flex h-screen">
+    <!-- 모바일 오버레이 -->
+    <div x-show="sidebarOpen" x-transition:enter="transition-opacity ease-linear duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-linear duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-40 bg-gray-600 bg-opacity-75 lg:hidden" @click="sidebarOpen = false">
+    </div>
+    <!-- 사이드바 -->
+    <div class="sidebar fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg transform -translate-x-full sidebar-transition" :class="{ 'translate-x-0': sidebarOpen, '-translate-x-full': !sidebarOpen }" x-cloak>
+      <!-- 로고 & 조직 선택 -->
+      <div class="flex flex-col h-full">
+        <div class="flex items-center justify-between p-2">
+          <span class="text-sm font-semibold">메뉴</span>
+          <button @click="sidebarOpen = false" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <!-- 조직 선택 드롭다운 -->
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 h-16 flex items-center" x-data="{ orgOpen: false }">
+          <div class="relative w-full">
+            <a :href="'/organization/' + '{{.Organization.OrgID}}'" class="flex items-center space-x-2 group">
+              <div class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                <span class="text-white text-xs font-bold">{{if .Organization}}{{substr .Organization.Name 0 1}}
+                  {{else}}D{{end}}</span>
+              </div>
+              <span class="font-medium group-hover:underline">{{if .Organization}}{{.Organization.Name}}
+                {{else}}Default Org{{end}}</span>
+            </a>
+            <button @click="orgOpen = !orgOpen" class="absolute right-0 top-1/2 -translate-y-1/2 p-1">
+              <svg class="w-4 h-4 transition-transform" :class="{ 'rotate-180': orgOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            <div x-show="orgOpen" x-transition:enter="transition ease-out duration-100" x-transition:enter-start="transform opacity-0 scale-95" x-transition:enter-end="transform opacity-100 scale-100" x-transition:leave="transition ease-in duration-75" x-transition:leave-start="transform opacity-100 scale-100" x-transition:leave-end="transform opacity-0 scale-95" @click.away="orgOpen = false" class="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+              <div class="p-2"> {{if .Organizations}} {{range .Organizations}} <button @click="switchOrganization('{{.OrgID}}')" class="w-full flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-left">
+                  <div class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span class="text-white text-xs font-bold">{{substr .Name 0 1}}</span>
+                  </div>
+                  <span>{{.Name}}</span>
+                </button> {{end}}
+                {{else}} <a href="/organization/default" class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <div class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                      <span class="text-white text-xs font-bold">D</span>
+                    </div>
+                    <span>Default Organization</span>
+                  </a> {{end}}
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 네비게이션 메뉴 -->
+        <nav class="flex-1 p-4 space-y-2 overflow-y-auto custom-scrollbar">
+          <a href="/dashboard" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {{if eq .CurrentPage "dashboard"}}bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400{{end}}">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+              </path>
+            </svg>
+            <span class="font-medium">대시보드</span>
+          </a>
+          <!-- 카테고리 관리 (마이그레이션 포함) -->
+          <div x-data="{ categoriesOpen: {{if or (eq .CurrentPage "categories") (eq .CurrentPage "migrations")}}true{{else}}false{{end}} }">
+            <button @click="categoriesOpen = !categoriesOpen" class="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {{if or (eq .CurrentPage "categories") (eq .CurrentPage "migrations")}}bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400{{end}}">
+              <div class="flex items-center space-x-3">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-4H5m14 8H5m14 4H5"></path>
+                </svg>
+                <span class="font-medium">카테고리</span>
+              </div>
+              <svg class="w-4 h-4 transition-transform" :class="{ 'rotate-180': categoriesOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            <div x-show="categoriesOpen" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" class="ml-8 mt-2 space-y-1">
+              <a href="/categories" class="block p-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors {{if eq .CurrentPage "categories"}}text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50{{end}}">목록 관리</a>
+              <a href="/categories/migrations" class="block p-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors {{if eq .CurrentPage "migrations"}}text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50{{end}}">마이그레이션</a>
+            </div>
+          </div>
+          <a href="/listeners" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {{if eq .CurrentPage "listeners"}}bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400{{end}}">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-5 5v-5zM9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span class="font-medium">리스너</span>
+          </a>
+          <a href="/data-explorer" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {{if eq .CurrentPage "data-explorer"}}bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400{{end}}">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+            <span class="font-medium">데이터 익스플로러</span>
+          </a>
+          <!-- 구분선 -->
+          <div class="border-t border-gray-200 dark:border-gray-700 my-4"></div> {{if and .User (eq .User.Role "admin")}}
+          <div class="space-y-2">
+            <div class="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              관리자 메뉴 </div>
+            <!-- 사용자 관리 (접고/펼치기) -->
+            <div x-data="{ usersOpen: {{if or (eq .CurrentPage "users") (eq .CurrentPage "tokens")}}true{{else}}false{{end}} }">
+              <button @click="usersOpen = !usersOpen" class="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {{if or (eq .CurrentPage "users") (eq .CurrentPage "tokens")}}bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400{{end}}">
+                <div class="flex items-center space-x-3">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z">
+                    </path>
+                  </svg>
+                  <span class="font-medium">사용자 관리</span>
+                </div>
+                <svg class="w-4 h-4 transition-transform" :class="{ 'rotate-180': usersOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+              <div x-show="usersOpen" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" class="ml-8 mt-2 space-y-1">
+                <a href="/users" class="block p-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors {{if eq .CurrentPage "users"}}text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50{{end}}">사용자 목록</a>
+                <a href="/tokens" class="block p-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors {{if eq .CurrentPage "tokens"}}text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50{{end}}">API 토큰</a>
+              </div>
+            </div>
+          </div> {{end}}
+        </nav>
+        <!-- 사용자 정보 & 설정 -->
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700" x-data="{ userMenuOpen: false }">
+          <div class="relative">
+            <button @click="userMenuOpen = !userMenuOpen" class="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+              <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <span class="text-white text-sm font-bold">{{if .User}}{{substr .User.Username 0 1 | upper}}
+                  {{else}}U{{end}}</span>
+              </div>
+              <div class="flex-1 text-left">
+                <div class="font-medium">{{if .User}}{{.User.Username}}
+                  {{else}}Guest{{end}}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">{{if .User}}{{.User.Role}}
+                  {{else}}guest{{end}}
+                </div>
+              </div>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            <div x-show="userMenuOpen" x-transition:enter="transition ease-out duration-100" x-transition:enter-start="transform opacity-0 scale-95" x-transition:enter-end="transform opacity-100 scale-100" x-transition:leave="transition ease-in duration-75" x-transition:leave-start="transform opacity-100 scale-100" x-transition:leave-end="transform opacity-0 scale-95" @click.away="userMenuOpen = false" class="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+              <div class="p-2">
+                <button @click="darkMode = !darkMode; localStorage.setItem('darkMode', darkMode)" class="w-full flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-left">
+                  <svg x-show="!darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z">
+                    </path>
+                  </svg>
+                  <svg x-show="darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z">
+                    </path>
+                  </svg>
+                  <span x-text="darkMode ? '라이트 모드' : '다크 모드'"></span>
+                </button>
+                <a href="/logout" class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                    </path>
+                  </svg>
+                  <span>로그아웃</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <script>
+          // 조직 드롭다운에서 선택된 조직이 있으면 window.currentOrgId로 설정
+          document.addEventListener('DOMContentLoaded', function() {
+            var orgDropdown = document.querySelector('[x-data] [x-show] [@click^="switchOrganization"]');
+            var selectedOrgId = '{{if .Organization}}{{.Organization.OrgID}}{{else}}default{{end}}';
+            window.currentOrgId = selectedOrgId;
+          });
+        </script>
+      </div>
+    </div>
+    <!-- 메인 콘텐츠 영역 -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- 상단 헤더 -->
+      <header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center space-x-4">
+            <button @click="sidebarOpen = !sidebarOpen" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+              <svg x-show="!sidebarOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16">
+                </path>
+              </svg>
+              <svg x-show="sidebarOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+            <a href="/dashboard" class="flex items-center space-x-2">
+              <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-sm">T</span>
+              </div>
+              <span class="font-bold text-lg">tmiDB</span>
+            </a>
+          </div>
+          <!-- 헤더 우측 액션 버튼들 -->
+          <div class="flex items-center space-x-4">
+            <!-- 알림 -->
+            <button class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 relative">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-5 5v-5zM9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
+            </button>
+            <!-- 시스템 상태 -->
+            <div class="flex items-center space-x-2 px-3 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 rounded-full text-sm">
+              <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span>시스템 정상</span>
+            </div>
+          </div>
+        </div>
+      </header>
+      <!-- 페이지 콘텐츠 -->
+      <main class="flex-1 overflow-auto p-6">

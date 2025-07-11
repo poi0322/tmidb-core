@@ -14,11 +14,11 @@ import (
 
 // DataPoint 수집되는 데이터 포인트 구조체
 type DataPoint struct {
-	ID        string                 `json:"id"`
-	Timestamp time.Time              `json:"timestamp"`
-	Source    string                 `json:"source"`
-	Category  string                 `json:"category"`
-	Data      map[string]interface{} `json:"data"`
+	ID        string         `json:"id"`
+	Timestamp time.Time      `json:"timestamp"`
+	Source    string         `json:"source"`
+	Category  string         `json:"category"`
+	Data      map[string]any `json:"data"`
 }
 
 // BaseConsumer는 NATS 메시지 소비자의 공통 로직을 포함합니다.
@@ -171,7 +171,9 @@ func (bc *BaseConsumer) Cleanup() {
 	log.Println("🧹 Cleaning up BaseConsumer...")
 	for _, sub := range bc.Subs {
 		if sub != nil {
-			sub.Unsubscribe()
+			if err := sub.Unsubscribe(); err != nil {
+					log.Printf("⚠️ Failed to unsubscribe from NATS: %v", err)
+				}
 		}
 	}
 	if bc.NatsConn != nil {

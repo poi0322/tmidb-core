@@ -156,7 +156,7 @@ tmidb-cli diagnose fix --dry-run
 
 ### 환경 변수
 
-- `TMIDB_SOCKET_PATH` - Unix 소켓 경로 지정 (기본값: `/tmp/tmidb-supervisor.sock`)
+- `TMIDB_SOCKET_PATH` - Unix 소켓 경로 지정 (기본값: `/bin/tmidb-supervisor.sock`)
 
 ## 아키텍처
 
@@ -220,7 +220,7 @@ tmidb-cli diagnose fix --dry-run
 ### Supervisor 연결 실패
 
 ```
-❌ Failed to connect to supervisor: dial unix /tmp/tmidb-supervisor.sock: connect: no such file or directory
+❌ Failed to connect to supervisor: dial unix /bin/tmidb-supervisor.sock: connect: no such file or directory
 💡 Make sure tmidb-supervisor is running
 ```
 
@@ -229,10 +229,10 @@ tmidb-cli diagnose fix --dry-run
 ### 권한 오류
 
 ```
-❌ Failed to connect to supervisor: dial unix /tmp/tmidb-supervisor.sock: connect: permission denied
+❌ Failed to connect to supervisor: dial unix /bin/tmidb-supervisor.sock: connect: permission denied
 ```
 
-**해결**: 소켓 파일의 권한 확인 (`ls -l /tmp/tmidb-supervisor.sock`)
+**해결**: 소켓 파일의 권한 확인 (`ls -l /bin/tmidb-supervisor.sock`)
 
 ## 결론
 

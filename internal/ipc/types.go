@@ -68,18 +68,18 @@ const (
 
 // Message IPC 메시지 구조체
 type Message struct {
-	ID        string                 `json:"id"`
-	Type      MessageType            `json:"type"`
-	Data      map[string]interface{} `json:"data,omitempty"`
-	Timestamp time.Time              `json:"timestamp"`
+	ID        string         `json:"id"`
+	Type      MessageType    `json:"type"`
+	Data      map[string]any `json:"data,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 // Response IPC 응답 구조체
 type Response struct {
-	ID      string      `json:"id"`
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   string      `json:"error,omitempty"`
+	ID      string `json:"id"`
+	Success bool   `json:"success"`
+	Data    any    `json:"data,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // LogEntry 로그 엔트리 구조체
@@ -166,7 +166,7 @@ type CopyProgress struct {
 }
 
 // NewMessage 새로운 메시지 생성
-func NewMessage(msgType MessageType, data map[string]interface{}) *Message {
+func NewMessage(msgType MessageType, data map[string]any) *Message {
 	return &Message{
 		ID:        generateID(),
 		Type:      msgType,
@@ -176,7 +176,7 @@ func NewMessage(msgType MessageType, data map[string]interface{}) *Message {
 }
 
 // NewResponse 새로운 응답 생성
-func NewResponse(id string, success bool, data interface{}, err string) *Response {
+func NewResponse(id string, success bool, data any, err string) *Response {
 	return &Response{
 		ID:      id,
 		Success: success,

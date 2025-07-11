@@ -139,7 +139,7 @@ tmidb-cli <--> IPC Client <--> Unix Socket <--> IPC Server <--> Supervisor
 - **설명**: 파일 수신 서버를 시작합니다.
 - **매개변수**:
   - `--port, -p`: 수신 포트 (기본값: 8080)
-  - `--path, -d`: 파일 저장 경로 (기본값: /tmp/received)
+  - `--path, -d`: 파일 저장 경로 (기본값: /bin/received)
 - **예시**:
   ```bash
   tmidb-cli copy receive --port 9000 --path /data/received

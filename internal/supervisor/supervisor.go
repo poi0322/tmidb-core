@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"runtime/debug"
 
 	"github.com/tmidb/tmidb-core/internal/ipc"
 	"github.com/tmidb/tmidb-core/internal/logger"
@@ -56,9 +56,6 @@ type Supervisor struct {
 	backups         map[string]*BackupInfo
 	backupProgress  map[string]*BackupProgress
 	restoreProgress map[string]*RestoreProgress
-
-	// Go 1.24 cleanup management
-	cleanup runtime.Cleanup
 }
 
 // Config holds supervisor configuration
@@ -123,7 +120,7 @@ type RestoreProgress struct {
 // DefaultConfig returns default supervisor configuration
 func DefaultConfig() *Config {
 	return &Config{
-		SocketPath:      "/tmp/tmidb-supervisor.sock",
+		SocketPath:      "/bin/tmidb-supervisor.sock",
 		PostgreSQLPath:  "/usr/local/bin/postgres-wrapper",
 		NATSPath:        "/usr/local/bin/nats-wrapper",
 		SeaweedFSPath:   "/usr/local/bin/weed-wrapper",
@@ -174,13 +171,13 @@ func New(config *Config) (*Supervisor, error) {
 	logManager := logger.NewManager(&logger.LogConfig{
 		BaseDir:       config.LogDir,
 		Level:         parseLogLevel(config.LogLevel),
-		MaxFileSize:   500, // 500MB (더 큰 파일 크기)
-		MaxFiles:      50,  // 더 많은 파일 보관
+		MaxFileSize:   500,                 // 500MB (더 큰 파일 크기)
+		MaxFiles:      50,                  // 더 많은 파일 보관
 		MaxAge:        24 * time.Hour * 30, // 30일 (더 오래 보관)
-		Compress:      false, // 압축 비활성화 (디버깅 용이성)
+		Compress:      false,               // 압축 비활성화 (디버깅 용이성)
 		BufferSize:    8192,
 		FlushInterval: 1 * time.Second, // 더 자주 플러시
-		ConsoleOutput: true, // 콘솔 출력 활성화
+		ConsoleOutput: true,            // 콘솔 출력 활성화
 	}, ipcServer)
 
 	// Initialize process manager
@@ -201,13 +198,6 @@ func New(config *Config) (*Supervisor, error) {
 
 	// Register external service restart callback
 	processManager.SetExternalServiceRestarter(supervisor.restartExternalService)
-
-	// Go 1.24 기능: 자동 정리를 위한 cleanup 등록
-	supervisor.cleanup = runtime.AddCleanup(&supervisor, func(s *Supervisor) {
-		if !s.stopping {
-			s.Stop()
-		}
-	}, supervisor)
 
 	// Setup IPC handlers
 	supervisor.setupIPCHandlers()
@@ -271,7 +261,7 @@ func (s *Supervisor) Start() error {
 // restartExternalService restarts an external service
 func (s *Supervisor) restartExternalService(serviceName string) error {
 	log.Printf("🔄 Restarting external service: %s", serviceName)
-	
+
 	switch serviceName {
 	case "postgresql":
 		return s.restartPostgreSQL()
@@ -287,39 +277,39 @@ func (s *Supervisor) restartExternalService(serviceName string) error {
 // restartPostgreSQL restarts PostgreSQL service
 func (s *Supervisor) restartPostgreSQL() error {
 	log.Println("🔄 Restarting PostgreSQL...")
-	
+
 	// Stop PostgreSQL
 	cmd := exec.Command("pkill", "-f", "postgres")
 	if err := cmd.Run(); err != nil {
 		log.Printf("⚠️ Failed to stop PostgreSQL: %v", err)
 	}
-	
+
 	// Wait a moment
 	time.Sleep(2 * time.Second)
-	
+
 	// Start PostgreSQL again
 	cmd = exec.Command("runuser", "-u", "postgres", "--", "postgres", "-D", "/data/postgresql", "-k", "/var/run/postgresql")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
-	
+
 	// Update PID file
 	pidFile := "/var/run/postgresql.pid"
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
 		log.Printf("⚠️ Failed to write PostgreSQL PID file: %v", err)
 	}
-	
+
 	// Wait for PostgreSQL to be ready
 	time.Sleep(3 * time.Second)
-	
+
 	// Re-attach to the new process
 	if err := s.attachToService("postgresql", pidFile); err != nil {
 		return fmt.Errorf("failed to re-attach to PostgreSQL: %w", err)
 	}
-	
+
 	log.Println("✅ PostgreSQL restarted successfully")
 	return nil
 }
@@ -327,39 +317,39 @@ func (s *Supervisor) restartPostgreSQL() error {
 // restartNATS restarts NATS service
 func (s *Supervisor) restartNATS() error {
 	log.Println("🔄 Restarting NATS...")
-	
+
 	// Stop NATS
 	cmd := exec.Command("pkill", "-f", "nats-server")
 	if err := cmd.Run(); err != nil {
 		log.Printf("⚠️ Failed to stop NATS: %v", err)
 	}
-	
+
 	// Wait a moment
 	time.Sleep(2 * time.Second)
-	
+
 	// Start NATS again
 	cmd = exec.Command("runuser", "-u", "natsuser", "--", "nats-server", "-sd", "/data/nats")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start NATS: %w", err)
 	}
-	
+
 	// Update PID file
 	pidFile := "/var/run/nats.pid"
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
 		log.Printf("⚠️ Failed to write NATS PID file: %v", err)
 	}
-	
+
 	// Wait for NATS to be ready
 	time.Sleep(3 * time.Second)
-	
+
 	// Re-attach to the new process
 	if err := s.attachToService("nats", pidFile); err != nil {
 		return fmt.Errorf("failed to re-attach to NATS: %w", err)
 	}
-	
+
 	log.Println("✅ NATS restarted successfully")
 	return nil
 }
@@ -367,39 +357,39 @@ func (s *Supervisor) restartNATS() error {
 // restartSeaweedFS restarts SeaweedFS service
 func (s *Supervisor) restartSeaweedFS() error {
 	log.Println("🔄 Restarting SeaweedFS...")
-	
+
 	// Stop SeaweedFS
 	cmd := exec.Command("pkill", "-f", "weed")
 	if err := cmd.Run(); err != nil {
 		log.Printf("⚠️ Failed to stop SeaweedFS: %v", err)
 	}
-	
+
 	// Wait a moment
 	time.Sleep(2 * time.Second)
-	
+
 	// Start SeaweedFS again
 	cmd = exec.Command("runuser", "-u", "seaweeduser", "--", "weed", "master", "-mdir=/data/seaweedfs/master")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start SeaweedFS: %w", err)
 	}
-	
+
 	// Update PID file
 	pidFile := "/var/run/seaweedfs.pid"
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
 		log.Printf("⚠️ Failed to write SeaweedFS PID file: %v", err)
 	}
-	
+
 	// Wait for SeaweedFS to be ready
 	time.Sleep(3 * time.Second)
-	
+
 	// Re-attach to the new process
 	if err := s.attachToService("seaweedfs", pidFile); err != nil {
 		return fmt.Errorf("failed to re-attach to SeaweedFS: %w", err)
 	}
-	
+
 	log.Println("✅ SeaweedFS restarted successfully")
 	return nil
 }
@@ -417,9 +407,9 @@ func (s *Supervisor) Run() error {
 	// Wait for shutdown signal
 	select {
 	case sig := <-sigChan:
-		log.Printf("Received signal %v, shutting down...", sig)
+		log.Printf("[RUN] Received signal %v, shutting down...", sig)
 	case <-s.ctx.Done():
-		log.Println("Context cancelled, shutting down...")
+		log.Println("[RUN] Context cancelled (s.ctx.Done()), shutting down...")
 	}
 
 	return s.Stop()
@@ -428,11 +418,12 @@ func (s *Supervisor) Run() error {
 // Stop gracefully stops all services and the supervisor
 func (s *Supervisor) Stop() error {
 	if s.stopping {
+		log.Println("[STOP] Stop() called but already stopping. 중복 호출 무시")
 		return nil
 	}
 	s.stopping = true
 
-	log.Println("Stopping tmiDB Supervisor...")
+	log.Printf("[STOP] Stopping tmiDB Supervisor... (Stop() 호출 스택트레이스)\n%s", debug.Stack())
 
 	// Stop internal components first
 	if err := s.processManager.Stop(); err != nil {
@@ -452,10 +443,7 @@ func (s *Supervisor) Stop() error {
 	// Cancel main context
 	s.cancel()
 
-	// Stop cleanup
-	s.cleanup.Stop()
-
-	log.Println("tmiDB Supervisor stopped")
+	log.Println("[STOP] tmiDB Supervisor stopped")
 	return nil
 }
 
@@ -675,9 +663,9 @@ func (s *Supervisor) updateProcessStats() {
 func (s *Supervisor) periodicStatsUpdater() {
 	ticker := time.NewTicker(10 * time.Second) // 10초마다 업데이트
 	defer ticker.Stop()
-	
+
 	log.Println("📊 Started periodic process stats updater (every 10 seconds)")
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -745,11 +733,17 @@ func (s *Supervisor) isPortReady(port int) bool {
 func (s *Supervisor) startInternalComponents() error {
 	log.Println("Starting internal components...")
 
+	// 바이너리 경로 결정 (개발/프로덕션 모두 /app/bin 사용)
+	binPath := os.Getenv("TMIDB_BIN_PATH")
+	if binPath == "" {
+		binPath = "/app/bin"
+	}
+
 	// Register API Server
 	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
 		Name:        "api",
 		Type:        process.TypeInternal,
-		Command:     "/app/bin/api",
+		Command:     filepath.Join(binPath, "api"),
 		Args:        []string{},
 		AutoRestart: true,
 	}); err != nil {
@@ -764,7 +758,7 @@ func (s *Supervisor) startInternalComponents() error {
 	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
 		Name:        "data-manager",
 		Type:        process.TypeInternal,
-		Command:     "/app/bin/data-manager",
+		Command:     filepath.Join(binPath, "data-manager"),
 		Args:        []string{},
 		AutoRestart: true,
 	}); err != nil {
@@ -779,7 +773,7 @@ func (s *Supervisor) startInternalComponents() error {
 	if err := s.processManager.RegisterProcess(&process.ProcessConfig{
 		Name:        "data-consumer",
 		Type:        process.TypeInternal,
-		Command:     "/app/bin/data-consumer",
+		Command:     filepath.Join(binPath, "data-consumer"),
 		Args:        []string{},
 		AutoRestart: true,
 	}); err != nil {
@@ -1002,7 +996,7 @@ func (s *Supervisor) streamLogsToConnection(component string, logChan chan<- ipc
 func (s *Supervisor) readRecentLogsFromDir(logDir, component string, lines int) ([]ipc.LogEntry, error) {
 	// Try to read from multiple log files (current + rotated)
 	var allEntries []ipc.LogEntry
-	
+
 	// Read from current log file first
 	currentFile := fmt.Sprintf("%s/%s.log", logDir, component)
 	if entries, err := s.readLogFile(currentFile); err == nil {
@@ -1270,7 +1264,7 @@ func (s *Supervisor) handleGetSystemResources(conn *ipc.Connection, msg *ipc.Mes
 	memoryUsage := s.getMemoryUsage()
 	diskUsage := s.getDiskUsage()
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"processes":       len(processes),
 		"running":         runningCount,
 		"stopped":         stoppedCount,
@@ -1501,7 +1495,7 @@ func (s *Supervisor) handleConfigGet(conn *ipc.Connection, msg *ipc.Message) *ip
 
 	if !hasKey || key == "" {
 		// 전체 설정 반환
-		configData := map[string]interface{}{
+		configData := map[string]any{
 			"socket_path":      s.config.SocketPath,
 			"postgresql_path":  s.config.PostgreSQLPath,
 			"nats_path":        s.config.NATSPath,
@@ -1518,7 +1512,7 @@ func (s *Supervisor) handleConfigGet(conn *ipc.Connection, msg *ipc.Message) *ip
 	}
 
 	// 특정 키 값 반환
-	var value interface{}
+	var value any
 	switch key {
 	case "socket_path":
 		value = s.config.SocketPath
@@ -1546,7 +1540,7 @@ func (s *Supervisor) handleConfigGet(conn *ipc.Connection, msg *ipc.Message) *ip
 		return ipc.NewResponse(msg.ID, false, nil, fmt.Sprintf("unknown config key: %s", key))
 	}
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{key: value}, "")
+	return ipc.NewResponse(msg.ID, true, map[string]any{key: value}, "")
 }
 
 func (s *Supervisor) handleConfigSet(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
@@ -1608,7 +1602,7 @@ func (s *Supervisor) handleConfigSet(conn *ipc.Connection, msg *ipc.Message) *ip
 		return ipc.NewResponse(msg.ID, false, nil, fmt.Sprintf("config key '%s' is not modifiable", key))
 	}
 
-	responseData := map[string]interface{}{
+	responseData := map[string]any{
 		"needs_restart": needsRestart,
 		"component":     component,
 	}
@@ -1617,7 +1611,7 @@ func (s *Supervisor) handleConfigSet(conn *ipc.Connection, msg *ipc.Message) *ip
 }
 
 func (s *Supervisor) handleConfigList(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
-	configs := []map[string]interface{}{
+	configs := []map[string]any{
 		{
 			"key":         "socket_path",
 			"value":       s.config.SocketPath,
@@ -1729,7 +1723,7 @@ func (s *Supervisor) handleConfigReset(conn *ipc.Connection, msg *ipc.Message) *
 }
 
 func (s *Supervisor) handleConfigImport(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
-	configData, ok := msg.Data["config"].(map[string]interface{})
+	configData, ok := msg.Data["config"].(map[string]any)
 	if !ok {
 		return ipc.NewResponse(msg.ID, false, nil, "config data required")
 	}
@@ -1767,7 +1761,7 @@ func (s *Supervisor) handleConfigImport(conn *ipc.Connection, msg *ipc.Message) 
 		}
 	}
 
-	responseData := map[string]interface{}{
+	responseData := map[string]any{
 		"changes": changes,
 	}
 
@@ -1811,7 +1805,7 @@ func (s *Supervisor) handleConfigValidate(conn *ipc.Connection, msg *ipc.Message
 		warnings = append(warnings, fmt.Sprintf("Log directory does not exist: %s", s.config.LogDir))
 	}
 
-	responseData := map[string]interface{}{
+	responseData := map[string]any{
 		"warnings": warnings,
 	}
 
@@ -1821,7 +1815,7 @@ func (s *Supervisor) handleConfigValidate(conn *ipc.Connection, msg *ipc.Message
 // Backup handlers
 func (s *Supervisor) handleBackupCreate(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
 	name, _ := msg.Data["name"].(string)
-	components, _ := msg.Data["components"].([]interface{})
+	components, _ := msg.Data["components"].([]any)
 	compress, _ := msg.Data["compress"].(bool)
 	outputDir, _ := msg.Data["output_dir"].(string)
 
@@ -1875,7 +1869,7 @@ func (s *Supervisor) handleBackupCreate(conn *ipc.Connection, msg *ipc.Message) 
 	// 백그라운드에서 백업 수행
 	go s.performBackup(backupID)
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"id":   backupID,
 		"path": backupPath,
 		"size": int64(0), // 초기 크기
@@ -1884,7 +1878,7 @@ func (s *Supervisor) handleBackupCreate(conn *ipc.Connection, msg *ipc.Message) 
 
 func (s *Supervisor) handleBackupRestore(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
 	backup, _ := msg.Data["backup"].(string)
-	components, _ := msg.Data["components"].([]interface{})
+	components, _ := msg.Data["components"].([]any)
 
 	if backup == "" {
 		return ipc.NewResponse(msg.ID, false, nil, "backup is required")
@@ -1921,17 +1915,17 @@ func (s *Supervisor) handleBackupRestore(conn *ipc.Connection, msg *ipc.Message)
 	// 백그라운드에서 복원 수행
 	go s.performRestore(restoreID, backupPath, s.parseComponents(components))
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"id": restoreID,
 	}, "")
 }
 
 func (s *Supervisor) handleBackupList(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
-	var backupList []interface{}
+	var backupList []any
 
 	// 메모리의 백업 목록
 	for _, backup := range s.backups {
-		backupList = append(backupList, map[string]interface{}{
+		backupList = append(backupList, map[string]any{
 			"id":         backup.ID,
 			"name":       backup.Name,
 			"created":    backup.Created.Format("2006-01-02 15:04:05"),
@@ -1960,7 +1954,7 @@ func (s *Supervisor) handleBackupList(conn *ipc.Connection, msg *ipc.Message) *i
 
 				if !found {
 					if info, err := file.Info(); err == nil {
-						backupList = append(backupList, map[string]interface{}{
+						backupList = append(backupList, map[string]any{
 							"id":         file.Name(),
 							"name":       strings.TrimSuffix(file.Name(), filepath.Ext(file.Name())),
 							"created":    info.ModTime().Format("2006-01-02 15:04:05"),
@@ -2085,16 +2079,16 @@ func (s *Supervisor) handleDiagnoseComponent(conn *ipc.Connection, msg *ipc.Mess
 
 func (s *Supervisor) handleDiagnoseConnectivity(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
 	// 간단한 연결성 테스트 구현
-	results := map[string]interface{}{
-		"postgresql": map[string]interface{}{
+	results := map[string]any{
+		"postgresql": map[string]any{
 			"status": "connected",
 			"port":   5432,
 		},
-		"nats": map[string]interface{}{
+		"nats": map[string]any{
 			"status": "connected",
 			"port":   4222,
 		},
-		"seaweedfs": map[string]interface{}{
+		"seaweedfs": map[string]any{
 			"status": "connected",
 			"port":   9333,
 		},
@@ -2146,7 +2140,7 @@ func (s *Supervisor) handleCopyReceive(conn *ipc.Connection, msg *ipc.Message) *
 		port = int(p)
 	}
 
-	path := "/tmp/received" // 기본 경로
+	path := "/bin/received" // 기본 경로
 	if p, ok := msg.Data["path"].(string); ok {
 		path = p
 	}
@@ -2181,7 +2175,7 @@ func (s *Supervisor) handleCopyReceive(conn *ipc.Connection, msg *ipc.Message) *
 	// 백그라운드에서 파일 수신 처리
 	go s.handleFileReceiver(sessionID, listener)
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"id":   sessionID,
 		"port": port,
 		"path": path,
@@ -2231,7 +2225,7 @@ func (s *Supervisor) handleCopySend(conn *ipc.Connection, msg *ipc.Message) *ipc
 	// 백그라운드에서 파일 전송 처리
 	go s.handleFileSender(sessionID)
 
-	return ipc.NewResponse(msg.ID, true, map[string]interface{}{
+	return ipc.NewResponse(msg.ID, true, map[string]any{
 		"id":        sessionID,
 		"file_size": fileInfo.Size(),
 	}, "")
@@ -2395,8 +2389,8 @@ func (s *Supervisor) sendFile(sessionID string, conn net.Conn) {
 	log.Printf("Copy sender %s: file sent successfully", sessionID)
 }
 
-// parseComponents converts interface{} slice to string slice for backup components
-func (s *Supervisor) parseComponents(components []interface{}) []string {
+// parseComponents converts any slice to string slice for backup components
+func (s *Supervisor) parseComponents(components []any) []string {
 	if components == nil {
 		return []string{"database", "config", "files"} // 기본 컴포넌트
 	}
@@ -2534,7 +2528,7 @@ func (s *Supervisor) backupDatabase(tarWriter *tar.Writer) error {
 // backupConfig backs up configuration files
 func (s *Supervisor) backupConfig(tarWriter *tar.Writer) error {
 	// 설정을 JSON으로 내보내기
-	configData := map[string]interface{}{
+	configData := map[string]any{
 		"socket_path":     s.config.SocketPath,
 		"postgresql_port": s.config.PostgreSQLPort,
 		"nats_port":       s.config.NATSPort,
@@ -2800,7 +2794,7 @@ func (s *Supervisor) restoreConfig(tarReader *tar.Reader) error {
 				return err
 			}
 
-			var config map[string]interface{}
+			var config map[string]any
 			if err := json.Unmarshal(configData, &config); err != nil {
 				return err
 			}
@@ -2861,11 +2855,11 @@ func (s *Supervisor) restoreFiles(tarReader *tar.Reader) error {
 }
 
 // verifyBackup verifies the integrity and contents of a backup file
-func (s *Supervisor) verifyBackup(backupPath string) map[string]interface{} {
-	result := map[string]interface{}{
+func (s *Supervisor) verifyBackup(backupPath string) map[string]any {
+	result := map[string]any{
 		"status":     "valid",
 		"integrity":  "valid",
-		"components": map[string]interface{}{},
+		"components": map[string]any{},
 		"errors":     []string{},
 	}
 
@@ -2901,7 +2895,7 @@ func (s *Supervisor) verifyBackup(backupPath string) map[string]interface{} {
 
 	// TAR 아카이브 검증
 	tarReader := tar.NewReader(reader)
-	components := make(map[string]interface{})
+	components := make(map[string]any)
 
 	for {
 		header, err := tarReader.Next()

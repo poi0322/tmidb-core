@@ -38,7 +38,7 @@ var diagnoseAllCmd = &cobra.Command{
 		}
 
 		// 진단 결과 표시
-		if report, ok := resp.Data.(map[string]interface{}); ok {
+		if report, ok := resp.Data.(map[string]any); ok {
 			displayDiagnosticReport(report)
 		}
 	},
@@ -53,7 +53,7 @@ var diagnoseComponentCmd = &cobra.Command{
 		component := args[0]
 		fmt.Printf("🔍 Diagnosing component: %s\n", component)
 
-		resp, err := client.SendMessage(ipc.MessageTypeDiagnoseComponent, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeDiagnoseComponent, map[string]any{
 			"component": component,
 		})
 		if err != nil {
@@ -67,7 +67,7 @@ var diagnoseComponentCmd = &cobra.Command{
 		}
 
 		// 컴포넌트 진단 결과 표시
-		if report, ok := resp.Data.(map[string]interface{}); ok {
+		if report, ok := resp.Data.(map[string]any); ok {
 			displayComponentDiagnostic(component, report)
 		}
 	},
@@ -92,7 +92,7 @@ var diagnoseConnectivityCmd = &cobra.Command{
 		}
 
 		// 연결성 테스트 결과 표시
-		if results, ok := resp.Data.(map[string]interface{}); ok {
+		if results, ok := resp.Data.(map[string]any); ok {
 			displayConnectivityResults(results)
 		}
 	},
@@ -109,7 +109,7 @@ var diagnosePerformanceCmd = &cobra.Command{
 		fmt.Println("Collecting metrics...")
 
 		// 성능 진단 시작
-		resp, err := client.SendMessage(ipc.MessageTypeDiagnosePerformance, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeDiagnosePerformance, map[string]any{
 			"duration": duration.Seconds(),
 		})
 		if err != nil {
@@ -123,14 +123,14 @@ var diagnosePerformanceCmd = &cobra.Command{
 		}
 
 		// 진행 상황 모니터링
-		if diagID, ok := resp.Data.(map[string]interface{})["id"].(string); ok {
+		if diagID, ok := resp.Data.(map[string]any)["id"].(string); ok {
 			if err := monitorDiagnosticProgress(diagID, duration); err != nil {
 				fmt.Printf("❌ Diagnostic monitoring error: %v\n", err)
 				return
 			}
 
 			// 결과 가져오기
-			resultResp, err := client.SendMessage(ipc.MessageTypeDiagnoseResult, map[string]interface{}{
+			resultResp, err := client.SendMessage(ipc.MessageTypeDiagnoseResult, map[string]any{
 				"id": diagID,
 			})
 			if err != nil {
@@ -138,7 +138,7 @@ var diagnosePerformanceCmd = &cobra.Command{
 				return
 			}
 
-			if results, ok := resultResp.Data.(map[string]interface{}); ok {
+			if results, ok := resultResp.Data.(map[string]any); ok {
 				displayPerformanceResults(results)
 			}
 		}
@@ -154,7 +154,7 @@ var diagnoseLogsCmd = &cobra.Command{
 
 		fmt.Printf("📄 Analyzing logs from last %d hours...\n", hours)
 
-		resp, err := client.SendMessage(ipc.MessageTypeDiagnoseLogs, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeDiagnoseLogs, map[string]any{
 			"hours": hours,
 		})
 		if err != nil {
@@ -168,7 +168,7 @@ var diagnoseLogsCmd = &cobra.Command{
 		}
 
 		// 로그 분석 결과 표시
-		if analysis, ok := resp.Data.(map[string]interface{}); ok {
+		if analysis, ok := resp.Data.(map[string]any); ok {
 			displayLogAnalysis(analysis)
 		}
 	},
@@ -199,7 +199,7 @@ var diagnoseFixCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := client.SendMessage(ipc.MessageTypeDiagnoseFix, map[string]interface{}{
+		resp, err := client.SendMessage(ipc.MessageTypeDiagnoseFix, map[string]any{
 			"dry_run": dryRun,
 		})
 		if err != nil {
@@ -213,14 +213,14 @@ var diagnoseFixCmd = &cobra.Command{
 		}
 
 		// 수정 결과 표시
-		if results, ok := resp.Data.(map[string]interface{}); ok {
+		if results, ok := resp.Data.(map[string]any); ok {
 			displayFixResults(results, dryRun)
 		}
 	},
 }
 
 // 진단 리포트 표시
-func displayDiagnosticReport(report map[string]interface{}) {
+func displayDiagnosticReport(report map[string]any) {
 	fmt.Println("═══════════════════════════════════════")
 	fmt.Println("        DIAGNOSTIC REPORT              ")
 	fmt.Println("═══════════════════════════════════════")
@@ -238,10 +238,10 @@ func displayDiagnosticReport(report map[string]interface{}) {
 	fmt.Printf("Generated: %s\n", getString(report, "timestamp"))
 
 	// 컴포넌트별 상태
-	if components, ok := report["components"].(map[string]interface{}); ok {
+	if components, ok := report["components"].(map[string]any); ok {
 		fmt.Println("\n📋 Component Status:")
 		for comp, data := range components {
-			if compData, ok := data.(map[string]interface{}); ok {
+			if compData, ok := data.(map[string]any); ok {
 				compStatus := getString(compData, "status")
 				icon := "❌"
 				if compStatus == "healthy" {
@@ -255,10 +255,10 @@ func displayDiagnosticReport(report map[string]interface{}) {
 	}
 
 	// 발견된 문제
-	if issues, ok := report["issues"].([]interface{}); ok && len(issues) > 0 {
+	if issues, ok := report["issues"].([]any); ok && len(issues) > 0 {
 		fmt.Printf("\n🚨 Issues Found (%d):\n", len(issues))
 		for i, issue := range issues {
-			if issueMap, ok := issue.(map[string]interface{}); ok {
+			if issueMap, ok := issue.(map[string]any); ok {
 				severity := getString(issueMap, "severity")
 				severityIcon := "ℹ️"
 				if severity == "critical" {
@@ -281,7 +281,7 @@ func displayDiagnosticReport(report map[string]interface{}) {
 	}
 
 	// 권장사항
-	if recommendations, ok := report["recommendations"].([]interface{}); ok && len(recommendations) > 0 {
+	if recommendations, ok := report["recommendations"].([]any); ok && len(recommendations) > 0 {
 		fmt.Printf("\n💡 Recommendations (%d):\n", len(recommendations))
 		for _, rec := range recommendations {
 			fmt.Printf("   • %v\n", rec)
@@ -292,7 +292,7 @@ func displayDiagnosticReport(report map[string]interface{}) {
 }
 
 // 컴포넌트 진단 결과 표시
-func displayComponentDiagnostic(component string, report map[string]interface{}) {
+func displayComponentDiagnostic(component string, report map[string]any) {
 	fmt.Printf("\n🔍 Diagnostic Results for: %s\n", component)
 	fmt.Println(strings.Repeat("─", 40))
 
@@ -308,10 +308,10 @@ func displayComponentDiagnostic(component string, report map[string]interface{})
 	fmt.Printf("\n%s Status: %s\n", statusIcon, status)
 
 	// 체크 항목
-	if checks, ok := report["checks"].([]interface{}); ok {
+	if checks, ok := report["checks"].([]any); ok {
 		fmt.Println("\n📋 Diagnostic Checks:")
 		for _, check := range checks {
-			if checkMap, ok := check.(map[string]interface{}); ok {
+			if checkMap, ok := check.(map[string]any); ok {
 				checkName := getString(checkMap, "name")
 				checkStatus := getString(checkMap, "status")
 				checkIcon := "❌"
@@ -331,7 +331,7 @@ func displayComponentDiagnostic(component string, report map[string]interface{})
 	}
 
 	// 메트릭
-	if metrics, ok := report["metrics"].(map[string]interface{}); ok {
+	if metrics, ok := report["metrics"].(map[string]any); ok {
 		fmt.Println("\n📊 Metrics:")
 		for key, value := range metrics {
 			fmt.Printf("   %-20s: %v\n", key, value)
@@ -340,12 +340,12 @@ func displayComponentDiagnostic(component string, report map[string]interface{})
 }
 
 // 연결성 테스트 결과 표시
-func displayConnectivityResults(results map[string]interface{}) {
+func displayConnectivityResults(results map[string]any) {
 	fmt.Println("\n🌐 Connectivity Test Results")
 	fmt.Println(strings.Repeat("─", 40))
 
 	// 연결 매트릭스
-	if matrix, ok := results["matrix"].(map[string]interface{}); ok {
+	if matrix, ok := results["matrix"].(map[string]any); ok {
 		fmt.Println("\nConnection Matrix:")
 		fmt.Printf("%-15s", "FROM \\ TO")
 
@@ -359,7 +359,7 @@ func displayConnectivityResults(results map[string]interface{}) {
 		// 매트릭스 데이터
 		for _, from := range components {
 			fmt.Printf("%-15s", from)
-			if fromData, ok := matrix[from].(map[string]interface{}); ok {
+			if fromData, ok := matrix[from].(map[string]any); ok {
 				for _, to := range components {
 					if from == to {
 						fmt.Printf("%-12s", "-")
@@ -379,7 +379,7 @@ func displayConnectivityResults(results map[string]interface{}) {
 	}
 
 	// 연결 문제
-	if issues, ok := results["issues"].([]interface{}); ok && len(issues) > 0 {
+	if issues, ok := results["issues"].([]any); ok && len(issues) > 0 {
 		fmt.Printf("\n❌ Connection Issues (%d):\n", len(issues))
 		for _, issue := range issues {
 			fmt.Printf("   • %v\n", issue)
@@ -390,12 +390,12 @@ func displayConnectivityResults(results map[string]interface{}) {
 }
 
 // 성능 진단 결과 표시
-func displayPerformanceResults(results map[string]interface{}) {
+func displayPerformanceResults(results map[string]any) {
 	fmt.Println("\n📊 Performance Diagnostic Results")
 	fmt.Println(strings.Repeat("═", 50))
 
 	// 요약
-	if summary, ok := results["summary"].(map[string]interface{}); ok {
+	if summary, ok := results["summary"].(map[string]any); ok {
 		fmt.Println("\n📌 Summary:")
 		fmt.Printf("   Duration: %v\n", summary["duration"])
 		fmt.Printf("   Samples: %v\n", summary["samples"])
@@ -403,10 +403,10 @@ func displayPerformanceResults(results map[string]interface{}) {
 	}
 
 	// 컴포넌트별 성능
-	if components, ok := results["components"].(map[string]interface{}); ok {
+	if components, ok := results["components"].(map[string]any); ok {
 		fmt.Println("\n🔧 Component Performance:")
 		for comp, data := range components {
-			if perfData, ok := data.(map[string]interface{}); ok {
+			if perfData, ok := data.(map[string]any); ok {
 				fmt.Printf("\n   %s:\n", comp)
 				fmt.Printf("      CPU Usage:    %.1f%% (avg) / %.1f%% (max)\n",
 					getFloat(perfData, "cpu_avg"), getFloat(perfData, "cpu_max"))
@@ -420,10 +420,10 @@ func displayPerformanceResults(results map[string]interface{}) {
 	}
 
 	// 병목 현상
-	if bottlenecks, ok := results["bottlenecks"].([]interface{}); ok && len(bottlenecks) > 0 {
+	if bottlenecks, ok := results["bottlenecks"].([]any); ok && len(bottlenecks) > 0 {
 		fmt.Printf("\n⚠️  Bottlenecks Detected (%d):\n", len(bottlenecks))
 		for _, bottleneck := range bottlenecks {
-			if b, ok := bottleneck.(map[string]interface{}); ok {
+			if b, ok := bottleneck.(map[string]any); ok {
 				fmt.Printf("   • %s: %s\n", getString(b, "component"), getString(b, "issue"))
 				fmt.Printf("     Impact: %s\n", getString(b, "impact"))
 				fmt.Printf("     Recommendation: %s\n", getString(b, "recommendation"))
@@ -432,7 +432,7 @@ func displayPerformanceResults(results map[string]interface{}) {
 	}
 
 	// 권장 사항
-	if recommendations, ok := results["optimization"].([]interface{}); ok && len(recommendations) > 0 {
+	if recommendations, ok := results["optimization"].([]any); ok && len(recommendations) > 0 {
 		fmt.Printf("\n💡 Optimization Suggestions (%d):\n", len(recommendations))
 		for i, rec := range recommendations {
 			fmt.Printf("   %d. %v\n", i+1, rec)
@@ -441,12 +441,12 @@ func displayPerformanceResults(results map[string]interface{}) {
 }
 
 // 로그 분석 결과 표시
-func displayLogAnalysis(analysis map[string]interface{}) {
+func displayLogAnalysis(analysis map[string]any) {
 	fmt.Println("\n📄 Log Analysis Results")
 	fmt.Println(strings.Repeat("─", 40))
 
 	// 요약
-	if summary, ok := analysis["summary"].(map[string]interface{}); ok {
+	if summary, ok := analysis["summary"].(map[string]any); ok {
 		fmt.Println("\n📊 Summary:")
 		fmt.Printf("   Total Logs Analyzed: %v\n", summary["total"])
 		fmt.Printf("   Time Range: %v\n", summary["time_range"])
@@ -455,10 +455,10 @@ func displayLogAnalysis(analysis map[string]interface{}) {
 	}
 
 	// 에러 패턴
-	if patterns, ok := analysis["error_patterns"].([]interface{}); ok && len(patterns) > 0 {
+	if patterns, ok := analysis["error_patterns"].([]any); ok && len(patterns) > 0 {
 		fmt.Printf("\n🔴 Error Patterns (%d):\n", len(patterns))
 		for _, pattern := range patterns {
-			if p, ok := pattern.(map[string]interface{}); ok {
+			if p, ok := pattern.(map[string]any); ok {
 				fmt.Printf("\n   Pattern: %s\n", getString(p, "pattern"))
 				fmt.Printf("   Count: %v\n", p["count"])
 				fmt.Printf("   Components: %v\n", p["components"])
@@ -469,7 +469,7 @@ func displayLogAnalysis(analysis map[string]interface{}) {
 	}
 
 	// 이상 징후
-	if anomalies, ok := analysis["anomalies"].([]interface{}); ok && len(anomalies) > 0 {
+	if anomalies, ok := analysis["anomalies"].([]any); ok && len(anomalies) > 0 {
 		fmt.Printf("\n⚠️  Anomalies Detected (%d):\n", len(anomalies))
 		for _, anomaly := range anomalies {
 			fmt.Printf("   • %v\n", anomaly)
@@ -477,7 +477,7 @@ func displayLogAnalysis(analysis map[string]interface{}) {
 	}
 
 	// 권장 사항
-	if actions, ok := analysis["recommended_actions"].([]interface{}); ok && len(actions) > 0 {
+	if actions, ok := analysis["recommended_actions"].([]any); ok && len(actions) > 0 {
 		fmt.Printf("\n💡 Recommended Actions:\n")
 		for i, action := range actions {
 			fmt.Printf("   %d. %v\n", i+1, action)
@@ -486,7 +486,7 @@ func displayLogAnalysis(analysis map[string]interface{}) {
 }
 
 // 수정 결과 표시
-func displayFixResults(results map[string]interface{}, dryRun bool) {
+func displayFixResults(results map[string]any, dryRun bool) {
 	if dryRun {
 		fmt.Println("\n🔧 Fix Results (DRY RUN)")
 		fmt.Println("The following actions WOULD be performed:")
@@ -496,10 +496,10 @@ func displayFixResults(results map[string]interface{}, dryRun bool) {
 	fmt.Println(strings.Repeat("─", 40))
 
 	// 수정 작업
-	if fixes, ok := results["fixes"].([]interface{}); ok {
+	if fixes, ok := results["fixes"].([]any); ok {
 		successCount := 0
 		for _, fix := range fixes {
-			if fixMap, ok := fix.(map[string]interface{}); ok {
+			if fixMap, ok := fix.(map[string]any); ok {
 				status := getString(fixMap, "status")
 				icon := "❌"
 				if status == "success" || (dryRun && status == "pending") {
@@ -526,7 +526,7 @@ func displayFixResults(results map[string]interface{}, dryRun bool) {
 	}
 
 	// 추가 조치 필요
-	if manual, ok := results["manual_actions"].([]interface{}); ok && len(manual) > 0 {
+	if manual, ok := results["manual_actions"].([]any); ok && len(manual) > 0 {
 		fmt.Printf("\n⚠️  Manual Actions Required:\n")
 		for i, action := range manual {
 			fmt.Printf("   %d. %v\n", i+1, action)

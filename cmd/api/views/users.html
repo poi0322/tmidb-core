@@ -1,0 +1,275 @@
+{{template "header" .}}
+
+<div x-data="usersData()" x-init="init()" class="space-y-6">
+
+  <!-- 페이지 헤더 -->
+  <div class="flex items-center justify-between">
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">사용자 관리</h2>
+    <p class="text-gray-600 dark:text-gray-400">시스템 사용자들을 관리하세요.</p>
+  </div>
+
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <div x-show="loading" class="text-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">로딩 중...</p>
+    </div>
+
+    <div x-show="!loading">
+      <div class="mb-4 flex items-center justify-between">
+        <input x-model="searchTerm" @input="filterUsers()" type="text" placeholder="사용자 검색..." class="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        <button @click="showCreateForm = true" class="ml-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+          새 사용자 생성
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead class="bg-gray-50 dark:bg-gray-700">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">사용자명</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">이메일</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">역할</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">조직</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">상태</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">액션</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            <template x-for="user in filteredUsers" :key="user.user_id">
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center">
+                    <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span class="text-white text-sm font-bold" x-text="user.username.charAt(0).toUpperCase()"></span>
+                    </div>
+                    <div class="ml-4">
+                      <div class="text-sm font-medium text-gray-900 dark:text-white" x-text="user.username"></div>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" x-text="user.email"></td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="px-2 py-1 text-xs font-medium rounded-full" :class="getRoleColor(user.role)" x-text="user.role"></span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" x-text="user.organization_name"></td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="px-2 py-1 text-xs rounded-full" :class="user.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200'" x-text="user.is_active ? '활성' : '비활성'"></span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <button @click="editUser(user)" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3">
+                    편집
+                  </button>
+                  <button @click="toggleUserStatus(user.user_id)" class="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 mr-3" x-text="user.is_active ? '비활성화' : '활성화'">
+                  </button>
+                  <button @click="deleteUser(user.user_id)" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                    삭제
+                  </button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <div x-show="filteredUsers.length === 0" class="text-center py-8">
+          <p class="text-gray-500 dark:text-gray-400">사용자가 없습니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 사용자 생성/편집 폼 (모달) -->
+  <div x-show="showCreateForm || showEditForm" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="closeForm()">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4" x-text="showEditForm ? '사용자 편집' : '새 사용자 생성'"></h3>
+      <form @submit.prevent="showEditForm ? updateUser() : createUser()">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">사용자명</label>
+          <input x-model="userForm.username" type="text" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">이메일</label>
+          <input x-model="userForm.email" type="email" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">비밀번호</label>
+          <input x-model="userForm.password" type="password" :required="!showEditForm" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+          <p x-show="showEditForm" class="text-xs text-gray-500 mt-1">편집 시 비밀번호를 입력하지 않으면 변경되지 않습니다.</p>
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">역할</label>
+          <select x-model="userForm.role" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="">역할 선택</option>
+            <option value="admin">관리자</option>
+            <option value="editor">편집자</option>
+            <option value="viewer">뷰어</option>
+          </select>
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">조직</label>
+          <select x-model="userForm.organization_id" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="">조직 선택</option>
+            <template x-for="org in organizations" :key="org.org_id">
+              <option :value="org.org_id" x-text="org.name"></option>
+            </template>
+          </select>
+        </div>
+        <div class="flex justify-end space-x-2">
+          <button type="button" @click="closeForm()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+            취소
+          </button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            <span x-text="showEditForm ? '수정' : '생성'"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+  function usersData(initialOrgId) {
+    const orgId = initialOrgId;
+    return {
+      loading: false,
+      showCreateForm: false,
+      showEditForm: false,
+      users: [],
+      filteredUsers: [],
+      organizations: [],
+      searchTerm: '',
+      userForm: {
+        username: '',
+        email: '',
+        password: '',
+        role: '',
+        organization_id: ''
+      },
+      editingUserId: null,
+
+      async init() {
+        await Promise.all([
+          this.loadUsers(),
+          this.loadOrganizations()
+        ]);
+      },
+
+      async loadUsers() {
+        this.loading = true;
+        try {
+          const response = await apiCall('/api/manage/users?org_id=' + orgId);
+          this.users = response.data.users || [];
+          this.filterUsers();
+        } catch (error) {
+          console.error('Failed to load users:', error);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async loadOrganizations() {
+        try {
+          const response = await apiCall('/api/manage/organizations');
+          this.organizations = response.organizations || [];
+        } catch (error) {
+          console.error('Failed to load organizations:', error);
+        }
+      },
+
+      filterUsers() {
+        if (!this.searchTerm) {
+          this.filteredUsers = this.users;
+        } else {
+          this.filteredUsers = this.users.filter(user =>
+            user.username.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
+            user.email.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
+            user.role.toLowerCase().includes(this.searchTerm.toLowerCase())
+          );
+        }
+      },
+
+      editUser(user) {
+        this.userForm = {
+          username: user.username,
+          email: user.email,
+          password: '',
+          role: user.role,
+          organization_id: user.organization_id
+        };
+        this.editingUserId = user.user_id;
+        this.showEditForm = true;
+      },
+
+      async createUser() {
+        try {
+          await apiCall('/api/manage/users?org_id=' + orgId, 'POST', this.userForm);
+          await this.loadUsers();
+          this.closeForm();
+        } catch (error) {
+          console.error('Failed to create user:', error);
+        }
+      },
+
+      async updateUser() {
+        try {
+          await apiCall(`/api/manage/users/${this.editingUserId}?org_id=${orgId}`, 'PUT', this.userForm);
+          await this.loadUsers();
+          this.closeForm();
+        } catch (error) {
+          console.error('Failed to update user:', error);
+        }
+      },
+
+      async toggleUserStatus(userId) {
+        try {
+          const response = await apiCall(`/api/manage/users/${userId}/toggle?org_id=${orgId}`, 'POST');
+          const user = this.users.find(u => u.user_id === userId);
+          if (user) {
+            user.is_active = response.data.is_active;
+          }
+        } catch (error) {
+          console.error('Failed to toggle user status:', error);
+        }
+      },
+
+      async deleteUser(userId) {
+        if (confirm('정말로 이 사용자를 삭제하시겠습니까?')) {
+          try {
+            await apiCall(`/api/manage/users/${userId}?org_id=${orgId}`, 'DELETE');
+            await this.loadUsers();
+          } catch (error) {
+            console.error('Failed to delete user:', error);
+          }
+        }
+      },
+
+      closeForm() {
+        this.showCreateForm = false;
+        this.showEditForm = false;
+        this.resetForm();
+      },
+
+      resetForm() {
+        this.userForm = {
+          username: '',
+          email: '',
+          password: '',
+          role: '',
+          organization_id: ''
+        };
+        this.editingUserId = null;
+      },
+
+      getRoleColor(role) {
+        const colors = {
+          'admin': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200',
+          'editor': 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200',
+          'viewer': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200'
+        };
+        return colors[role] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-200';
+      }
+    }
+  }
+</script>
+
+{{template "footer" .}}

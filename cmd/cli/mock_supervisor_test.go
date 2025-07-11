@@ -21,7 +21,7 @@ type MockSupervisor struct {
 // NewMockSupervisor creates a new mock supervisor for testing
 func NewMockSupervisor(socketPath string) *MockSupervisor {
 	if socketPath == "" {
-		socketPath = "/tmp/tmidb-test-supervisor.sock"
+		socketPath = "/bin/tmidb-test-supervisor.sock"
 	}
 
 	return &MockSupervisor{
@@ -137,9 +137,9 @@ func (m *MockSupervisor) handleGetLogs(conn *ipc.Connection, msg *ipc.Message) *
 	}
 
 	// Mock log entries
-	logs := []map[string]interface{}{}
+	logs := []map[string]any{}
 	for i := 0; i < lines && i < 10; i++ {
-		logs = append(logs, map[string]interface{}{
+		logs = append(logs, map[string]any{
 			"timestamp": time.Now().Add(-time.Duration(i) * time.Minute).Format("15:04:05"),
 			"process":   component,
 			"message":   fmt.Sprintf("Mock log entry %d for %s", i+1, component),
@@ -255,14 +255,14 @@ func (m *MockSupervisor) handleSystemHealth(conn *ipc.Connection, msg *ipc.Messa
 
 	// Convert to map for JSON marshaling
 	healthData, _ := json.Marshal(health)
-	var healthMap map[string]interface{}
+	var healthMap map[string]any
 	json.Unmarshal(healthData, &healthMap)
 
 	return ipc.NewResponse(msg.ID, true, healthMap, "")
 }
 
 func (m *MockSupervisor) handleSystemStats(conn *ipc.Connection, msg *ipc.Message) *ipc.Response {
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"processes":       len(m.processes),
 		"running":         2,
 		"stopped":         1,
@@ -280,14 +280,14 @@ func TestMockSupervisor(t *testing.T) {
 		t.Skip("Skipping mock supervisor test in short mode")
 	}
 
-	supervisor := NewMockSupervisor("/tmp/tmidb-test-supervisor.sock")
+	supervisor := NewMockSupervisor("/bin/tmidb-test-supervisor.sock")
 
 	if err := supervisor.Start(); err != nil {
 		t.Fatalf("Failed to start mock supervisor: %v", err)
 	}
 	defer supervisor.Stop()
 
-	log.Println("Mock supervisor started on /tmp/tmidb-test-supervisor.sock")
+	log.Println("Mock supervisor started on /bin/tmidb-test-supervisor.sock")
 	log.Println("Run CLI tests against this socket...")
 
 	// Keep running for manual testing

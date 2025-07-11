@@ -186,13 +186,3 @@ func (qp *QueryParser) ParseQueryParams(queryParams url.Values) ([]Filter, error
 
 	return filters, nil
 }
-
-// ParseMultiListenerPath는 다중 리스너 API 경로를 파싱합니다.
-func ParseMultiListenerPath(path string) []string {
-	// "/api/v1/listener/server_monitor/sensor_broken/air_sensor" -> ["server_monitor", "sensor_broken", "air_sensor"]
-	parts := strings.Split(path, "/")
-	if len(parts) < 5 || parts[1] != "api" || parts[3] != "listener" {
-		return nil
-	}
-	return parts[4:] // listener 이후의 모든 부분
-}

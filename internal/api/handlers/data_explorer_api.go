@@ -3,155 +3,210 @@ package handlers
 import (
 	"encoding/json"
 	"log"
-	"time"
-
-	"github.com/tmidb/tmidb-core/internal/database"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/tmidb/tmidb-core/internal/config"
+	"github.com/tmidb/tmidb-core/internal/database"
 )
 
-// GetTargetsByCategory는 카테고리별 타겟 목록을 반환합니다.
-func GetTargetsByCategory(c *fiber.Ctx) error {
-	category := c.Params("category")
-
-	type TargetInfo struct {
-		TargetID string `json:"target_id"`
-		Name     string `json:"name"`
-	}
-
-	rows, err := database.DB.Query("SELECT target_id, name FROM get_targets_by_category($1)", category)
+// ExploreData는 데이터 익스플로러의 기본 데이터 목록을 조회합니다.
+func ExploreData(c *fiber.Ctx) error {
+	cfg, err := config.Load()
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "database error"})
+		log.Printf("Error loading config: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Configuration error",
+		})
 	}
-	defer rows.Close()
 
-	var targets []TargetInfo
-	for rows.Next() {
-		var t TargetInfo
-		if err := rows.Scan(&t.TargetID, &t.Name); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "scan error"})
-		}
-		targets = append(targets, t)
+	orgID := c.Locals("org_id").(string)
+	if orgID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "org_id is required",
+		})
 	}
-	return c.JSON(targets)
-}
 
-// GetTargetDetails는 특정 타겟의 상세 정보를 반환합니다.
-func GetTargetDetails(c *fiber.Ctx) error {
-	targetID := c.Params("id")
-	category := c.Query("category")
+	filter := database.ExplorerDataFilter{
+		Category:  c.Query("category"),
+		StartDate: c.Query("startDate"),
+		EndDate:   c.Query("endDate"),
+	}
 
-	var targetName, categoryData, updatedAt string
-	err := database.DB.QueryRow(`
-		SELECT t.name, tc.category_data, tc.updated_at
-		FROM target_categories tc
-		JOIN target t ON tc.target_id = t.target_id
-		WHERE t.target_id = $1 AND tc.category_name = $2
-	`, targetID, category).Scan(&targetName, &categoryData, &updatedAt)
-
+	data, err := database.GetExplorerData(cfg, orgID, filter)
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "target not found"})
+		log.Printf("[ExploreData] orgID=%s, 데이터 조회 실패: %v", orgID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Failed to retrieve data",
+		})
 	}
-
-	var data map[string]interface{}
-	json.Unmarshal([]byte(categoryData), &data)
 
 	return c.JSON(fiber.Map{
-		"target_id":     targetID,
-		"target_name":   targetName,
-		"category":      category,
-		"category_data": data,
-		"updated_at":    updatedAt,
+		"success": true,
+		"data":    data,
 	})
 }
 
-// GetTimeSeriesData는 특정 타겟의 시계열 데이터를 반환합니다.
-func GetTimeSeriesData(c *fiber.Ctx) error {
-	targetID := c.Params("id")
-	category := c.Query("category")
-
-	type TsData struct {
-		Ts      time.Time       `json:"ts"`
-		Payload json.RawMessage `json:"payload"`
-	}
-
-	rows, err := database.DB.Query(`
-		SELECT ts, payload FROM public.ts_obs 
-		WHERE target_id = $1 AND category_name = $2 
-		ORDER BY ts DESC LIMIT 100
-	`, targetID, category)
+// GetDataCategories는 데이터 익스플로러에서 사용할 카테고리 목록을 조회합니다.
+func GetDataCategories(c *fiber.Ctx) error {
+	cfg, err := config.Load()
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "database error"})
-	}
-	defer rows.Close()
-
-	var results []TsData
-	for rows.Next() {
-		var d TsData
-		if err := rows.Scan(&d.Ts, &d.Payload); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "scan error"})
-		}
-		results = append(results, d)
+		log.Printf("Error loading config: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Configuration error",
+		})
 	}
 
-	return c.JSON(results)
-}
-
-// InsertTimeSeriesData는 시계열 데이터를 추가합니다.
-func InsertTimeSeriesData(c *fiber.Ctx) error {
-	var req struct {
-		TargetID     string `json:"target_id"`
-		CategoryName string `json:"category_name"`
-		Ts           string `json:"ts"`
-		Payload      string `json:"payload"`
+	orgID := c.Locals("org_id").(string)
+	if orgID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "org_id is required",
+		})
 	}
 
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
-	}
-
-	// Payload JSON 유효성 검사
-	if !json.Valid([]byte(req.Payload)) {
-		return c.Status(400).JSON(fiber.Map{"error": "Payload is not valid JSON"})
-	}
-
-	_, err := database.DB.Exec("SELECT insert_ts_obs($1, $2, $3, $4)",
-		req.TargetID, req.CategoryName, req.Ts, req.Payload)
-
+	categories, err := database.GetCategoriesForExplorer(cfg, orgID)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to insert data", "details": err.Error()})
+		log.Printf("Error getting categories for explorer for org %s: %v", orgID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Failed to retrieve categories",
+		})
 	}
 
-	return c.JSON(fiber.Map{"status": "success"})
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    categories,
+	})
 }
 
-// GetSchemaAPI는 데이터 탐색을 위한 스키마 정보를 반환합니다.
-func GetSchemaAPI(c *fiber.Ctx) error {
-	// TODO: org_id를 세션에서 가져와야 함.
-	// schema, err := database.GetFullSchemaForOrg("some-org-id")
-	// if err != nil {
-	// 	 return c.Status(500).JSON(fiber.Map{"error": "could not get schema"})
-	// }
-	// return c.JSON(schema)
-	return c.JSON(fiber.Map{"message": "Schema API not implemented yet"})
+// SearchTargets는 특정 카테고리의 타겟을 검색합니다.
+func SearchTargets(c *fiber.Ctx) error {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("Error loading config: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Configuration error",
+		})
+	}
+
+	orgID := c.Locals("org_id").(string)
+	if orgID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "org_id is required",
+		})
+	}
+
+	query := c.Query("q")
+	if query == "" {
+		return c.JSON(fiber.Map{"success": true, "data": []interface{}{}})
+	}
+
+	targets, err := database.SearchTargets(cfg, orgID, query)
+	if err != nil {
+		log.Printf("Error searching targets for org %s: %v", orgID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Failed to search targets",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    targets,
+	})
 }
 
-// ExecuteQueryAPI는 데이터 탐색기에서 받은 쿼리를 실행합니다.
-func ExecuteQueryAPI(c *fiber.Ctx) error {
-	var req struct {
-		Query string `json:"query"`
-	}
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+// ValidateData는 주어진 데이터가 카테고리 스키마에 맞는지 검증합니다.
+func ValidateData(c *fiber.Ctx) error {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("Error loading config: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"success": false, "error": "Configuration error"})
 	}
 
-	// 쿼리 파싱 및 실행 로직 필요
-	log.Printf("Received query: %s", req.Query)
+	orgID := c.Locals("org_id").(string)
+	categoryName := c.Params("category")
+	if orgID == "" || categoryName == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "org_id and category are required and org_id must be a valid UUID"})
+	}
 
-	// result, err := ParseAndExecute(req.Query)
-	// if err != nil {
-	// 	 return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	var reqBody struct {
+		Data json.RawMessage `json:"data"`
+	}
+
+	if err := c.BodyParser(&reqBody); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "Invalid request body"})
+	}
+
+	if len(reqBody.Data) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "Data field is required"})
+	}
+
+	result, err := database.ValidateDataAgainstSchema(cfg, orgID, categoryName, reqBody.Data)
+	if err != nil {
+		log.Printf("Error validating data for org %s, category %s: %v", orgID, categoryName, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Failed to validate data",
+			"details": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// SaveData는 새로운 데이터를 추가하거나 기존 데이터를 수정합니다.
+func SaveData(c *fiber.Ctx) error {
+	// 1. 파라미터 및 폼 데이터 파싱
+	orgID := c.Locals("org_id").(string)
+	targetID := c.Params("target_id")
+	categoryName := c.Params("category_name")
+
+	if orgID == "" || targetID == "" || categoryName == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "org_id, target_id, category_name are required and org_id must be a valid UUID"})
+	}
+
+	// 'category_data' 필드는 JSON 문자열로 전송됩니다.
+	jsonData := c.FormValue("category_data")
+	if jsonData == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "category_data form value is required"})
+	}
+
+	// TODO: 파일 핸들링 로직 추가
+	// form, err := c.MultipartForm()
+	// if err == nil {
+	// 	files := form.File["files"]
 	// }
-	// return c.JSON(result)
-	return c.JSON(fiber.Map{"message": "Query execution not implemented yet"})
+
+	// 2. 데이터베이스 함수 호출
+	cfg, err := config.Load()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"success": false, "error": "Configuration error"})
+	}
+
+	// 3. 데이터베이스에 저장
+	// 참고: 현재는 간단한 UPSERT만 구현합니다. 시계열, 파일 처리 등은 추가 구현이 필요합니다.
+	err = database.SaveExplorerData(cfg, orgID, targetID, categoryName, []byte(jsonData))
+	if err != nil {
+		log.Printf("Error saving data for org %s: %v", orgID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Failed to save data",
+			"details": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Data saved successfully",
+	})
 }

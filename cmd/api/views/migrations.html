@@ -1,0 +1,242 @@
+{{template "header" .}}
+
+<div x-data="migrationsData()" x-init="init()" class="space-y-6">
+
+  <!-- 페이지 헤더 -->
+  <div class="flex items-center justify-between">
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">카테고리 마이그레이션</h2>
+    <p class="text-gray-600 dark:text-gray-400">카테고리 스키마 마이그레이션을 관리하세요.</p>
+  </div>
+
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <div x-show="loading" class="text-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">로딩 중...</p>
+    </div>
+
+    <div x-show="!loading">
+      <div class="mb-4 flex items-center justify-between">
+        <input x-model="searchTerm" @input="filterMigrations()" type="text" placeholder="마이그레이션 검색..." class="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        <button @click="showCreateForm = true" class="ml-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+          새 마이그레이션 생성
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <template x-for="migration in filteredMigrations" :key="migration.migration_id">
+          <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white" x-text="migration.category_name"></h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400" x-text="`버전 ${migration.from_version} → ${migration.to_version}`"></p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">생성일: <span x-text="window.formatDate(migration.created_at)"></span></p>
+              </div>
+              <div class="flex items-center space-x-4 mt-3 sm:mt-0">
+                <span class="px-2 py-1 text-xs rounded-full" :class="getStatusColor(migration.status)" x-text="migration.status"></span>
+                <button @click="viewScript(migration)" class="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500">스크립트 보기</button>
+                <button @click="executeMigration(migration.migration_id)" :disabled="migration.status === 'RUNNING' || migration.status === 'COMPLETED'" class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                  실행
+                </button>
+                <button @click="deleteMigration(migration.migration_id)" class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700">
+                  삭제
+                </button>
+              </div>
+            </div>
+            <div x-show="migration.status === 'RUNNING'" class="mt-3">
+              <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div class="bg-blue-600 h-2 rounded-full animate-pulse" style="width: 100%"></div>
+              </div>
+              <p class="text-xs text-blue-600 dark:text-blue-400 text-right mt-1">마이그레이션 진행 중...</p>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div x-show="migrations.length === 0" class="text-center py-8">
+        <p class="text-gray-500 dark:text-gray-400">마이그레이션이 없습니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 마이그레이션 생성 폼 (모달) -->
+  <div x-show="showCreateForm" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="showCreateForm = false">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">새 마이그레이션 생성</h3>
+      <form @submit.prevent="createMigration()">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">카테고리 이름</label>
+          <input x-model="newMigration.category_name" type="text" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <div class="flex space-x-4 mb-4">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">From Version</label>
+            <input x-model.number="newMigration.from_version" type="number" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+          </div>
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">To Version</label>
+            <input x-model.number="newMigration.to_version" type="number" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">마이그레이션 스크립트 (goja Javascript)</label>
+          <textarea x-model="newMigration.migration_script" rows="8" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono text-sm" placeholder="function migrate(oldData) { ... }"></textarea>
+        </div>
+        <div class="flex justify-end space-x-2">
+          <button type="button" @click="showCreateForm = false" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+            취소
+          </button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            생성
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 스크립트 보기 모달 -->
+  <div x-show="showScriptModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="showScriptModal = false">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-3xl shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white">마이그레이션 스크립트</h3>
+        <button @click="showScriptModal = false" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <pre class="bg-gray-100 dark:bg-gray-900 p-4 rounded-md overflow-auto max-h-96 text-sm font-mono" x-text="selectedScript"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  function migrationsData(initialOrgId) {
+    const orgId = initialOrgId;
+    return {
+      loading: false,
+      showCreateForm: false,
+      showScriptModal: false,
+      migrations: [],
+      filteredMigrations: [],
+      searchTerm: '',
+      selectedScript: '',
+      newMigration: {
+        category_name: '',
+        from_version: 1,
+        to_version: 2,
+        migration_script: `function migrate(oldData) {
+  // 예시: 새로운 필드를 추가하고, 기존 필드 이름을 변경합니다.
+  const newData = { ...oldData };
+  newData.new_field = "default value";
+  newData.renamed_field = oldData.old_field;
+  delete newData.old_field;
+  return newData;
+}`
+      },
+
+      async init() {
+        await this.loadMigrations();
+      },
+
+      async loadMigrations() {
+        this.loading = true;
+        try {
+          const response = await apiCall(`/api/manage/migrations?org_id=${orgId}`);
+          if (response.success) {
+            this.migrations = response.data || [];
+            this.filterMigrations();
+          }
+        } catch (error) {
+          console.error('Failed to load migrations:', error);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      filterMigrations() {
+        if (!this.searchTerm) {
+          this.filteredMigrations = this.migrations;
+        } else {
+          this.filteredMigrations = this.migrations.filter(m =>
+            m.category_name.toLowerCase().includes(this.searchTerm.toLowerCase())
+          );
+        }
+      },
+
+      async createMigration() {
+        try {
+          const response = await apiCall(`/api/manage/migrations?org_id=${orgId}`, {
+            method: 'POST',
+            body: JSON.stringify(this.newMigration)
+          });
+          if (response.success) {
+            this.showCreateForm = false;
+            this.resetForm();
+            await this.loadMigrations();
+          } else {
+            alert(`마이그레이션 생성 실패: ${response.message || '알 수 없는 오류'}`);
+          }
+        } catch (error) {
+          console.error('Failed to create migration:', error);
+          alert(`마이그레이션 생성 실패: ${error.message}`);
+        }
+      },
+
+      async executeMigration(migrationId) {
+        if (!confirm('이 마이그레이션을 실행하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+        try {
+          const response = await apiCall(`/api/manage/migrations/${migrationId}/execute?org_id=${orgId}`, {
+            method: 'POST'
+          });
+          if (response.success) {
+            await this.loadMigrations();
+          } else {
+            alert(`마이그레이션 실행 실패: ${response.message || '알 수 없는 오류'}`);
+          }
+        } catch (error) {
+          console.error('Failed to execute migration:', error);
+          alert(`마이그레이션 실행 실패: ${error.message}`);
+        }
+      },
+
+      async deleteMigration(migrationId) {
+        if (!confirm('이 마이그레이션을 삭제하시겠습니까?')) return;
+        try {
+          const response = await apiCall(`/api/manage/migrations/${migrationId}?org_id=${orgId}`, {
+            method: 'DELETE'
+          });
+          if (response.success) {
+            await this.loadMigrations();
+          } else {
+            alert(`삭제 실패: ${response.message || '알 수 없는 오류'}`);
+          }
+        } catch (error) {
+          console.error('Failed to delete migration:', error);
+          alert(`삭제 실패: ${error.message}`);
+        }
+      },
+
+      viewScript(migration) {
+        this.selectedScript = migration.migration_script;
+        this.showScriptModal = true;
+      },
+
+      resetForm() {
+        this.newMigration = {
+          category_name: '',
+          from_version: 1,
+          to_version: 2,
+          migration_script: `function migrate(oldData) {\n  const newData = { ...oldData };\n  // 여기에 마이그레이션 로직을 작성하세요.\n  return newData;\n}`
+        };
+      },
+
+      getStatusColor(status) {
+        const colors = {
+          'PENDING': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
+          'RUNNING': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200',
+          'COMPLETED': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200',
+          'FAILED': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200',
+        };
+        return colors[status] || 'bg-gray-100';
+      }
+    }
+  }
+</script>
+
+{{template "footer" .}}

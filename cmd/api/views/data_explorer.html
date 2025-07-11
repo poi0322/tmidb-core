@@ -1,0 +1,777 @@
+{{template "header" .}}
+
+<div x-data="dataExplorerData(initialOrgId)" x-init="init()" class="h-full flex flex-col">
+
+  <!-- 페이지 헤더 -->
+  <div class="flex-shrink-0 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">데이터 탐색기</h2>
+        <p class="text-gray-600 dark:text-gray-400">저장된 데이터를 조회하고 분석하세요.</p>
+      </div>
+      <div class="flex space-x-2">
+        <button @click="exportData()" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+          데이터 내보내기
+        </button>
+        <button @click="refreshData()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+          새로고침
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 검색 필터 -->
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">카테고리</label>
+        <select x-model="filters.category" @change="applyFilters()" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+          <option value="">전체</option>
+          <template x-for="category in categories" :key="category.category_name">
+            <option :value="category.category_name" x-text="category.category_name"></option>
+          </template>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">시작 날짜</label>
+        <input x-model="filters.startDate" @change="applyFilters()" type="date" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">종료 날짜</label>
+        <input x-model="filters.endDate" @change="applyFilters()" type="date" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+      </div>
+      <div class="flex items-end space-x-2">
+        <button @click="resetFilters()" class="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors">
+          필터 초기화
+        </button>
+        <button @click="showAddDataModal = true" class="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+          데이터 추가
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 데이터 테이블 -->
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">데이터 목록</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">총 <span x-text="filteredData.length"></span>개의 레코드</p>
+        </div>
+        <div class="flex space-x-2">
+          <button @click="exportData()" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+            데이터 내보내기
+          </button>
+          <button @click="refreshData()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+            새로고침
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div x-show="loading" class="text-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">데이터 로딩 중...</p>
+    </div>
+
+    <div x-show="!loading" class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">ID</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">카테고리</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">타임스탬프</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">데이터</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">액션</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+          <template x-for="item in paginatedData" :key="item.record_id">
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" x-text="item.record_id.slice(0, 8) + '...'"></td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <span class="px-2 py-1 text-xs font-medium rounded-full" :class="getCategoryColor(item.category)" x-text="item.category"></span>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" x-text="window.formatDate(item.timestamp)"></td>
+              <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                <div class="max-w-xs truncate" x-text="JSON.stringify(item.data).slice(0, 50) + '...'"></div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <button @click="viewDetails(item)" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3">
+                  상세보기
+                </button>
+                <button @click="editRecord(item)" class="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300 mr-3">
+                  수정
+                </button>
+                <button @click="downloadRecord(item)" class="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300">
+                  다운로드
+                </button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+
+      <div x-show="filteredData.length === 0" class="text-center py-8">
+        <p class="text-gray-500 dark:text-gray-400">조건에 맞는 데이터가 없습니다.</p>
+      </div>
+    </div>
+
+    <!-- 페이지네이션 -->
+    <div x-show="filteredData.length > 0" class="bg-white dark:bg-gray-800 px-4 py-3 border-t border-gray-200 dark:border-gray-700 sm:px-6">
+      <div class="flex items-center justify-between">
+        <div class="flex justify-between flex-1 sm:hidden">
+          <button @click="previousPage()" :disabled="currentPage === 1" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
+            이전
+          </button>
+          <button @click="nextPage()" :disabled="currentPage === totalPages" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
+            다음
+          </button>
+        </div>
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+          <div>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              총 <span class="font-medium" x-text="filteredData.length"></span>개 중
+              <span class="font-medium" x-text="(currentPage - 1) * pageSize + 1"></span>-<span class="font-medium" x-text="Math.min(currentPage * pageSize, filteredData.length)"></span>개 표시
+            </p>
+          </div>
+          <div>
+            <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+              <button @click="previousPage()" :disabled="currentPage === 1" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">
+                이전
+              </button>
+              <button @click="nextPage()" :disabled="currentPage === totalPages" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">
+                다음
+              </button>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 상세 보기 모달 -->
+  <div x-show="showModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="showModal = false">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white">데이터 상세 정보</h3>
+        <button @click="showModal = false" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <div x-show="selectedRecord">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">레코드 ID</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="selectedRecord?.record_id"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">카테고리</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="selectedRecord?.category"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">타임스탬프</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="window.formatDate(selectedRecord?.timestamp)"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">데이터 크기</label>
+            <p class="mt-1 text-sm text-gray-900 dark:text-gray-100" x-text="window.formatFileSize(JSON.stringify(selectedRecord?.data).length)"></p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">데이터 내용</label>
+          <pre class="bg-gray-100 dark:bg-gray-700 p-4 rounded-md overflow-auto max-h-96 text-sm" x-text="JSON.stringify(selectedRecord?.data, null, 2)"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 데이터 추가/수정 모달 -->
+  <div x-show="showAddDataModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="showAddDataModal = false">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white dark:bg-gray-800" @click.stop>
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white" x-text="editingRecord ? '데이터 수정' : '새 데이터 추가'"></h3>
+        <button @click="showAddDataModal = false" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+
+      <form @submit.prevent="saveData()">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">카테고리</label>
+            <select x-model="newData.category" @change="onCategoryChange()" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+              <option value="">카테고리 선택</option>
+              <template x-for="category in categories" :key="category.category_name">
+                <option :value="category.category_name" x-text="category.category_name"></option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">타겟 ID</label>
+            <div class="relative">
+              <input x-model="newData.target_id" @input="searchTargets()" @focus="showTargetDropdown = true" type="text" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white" placeholder="타겟 ID 입력 또는 검색">
+              <!-- 타겟 검색 드롭다운 -->
+              <div x-show="showTargetDropdown && filteredTargets.length > 0" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
+                <template x-for="target in filteredTargets" :key="target.target_id">
+                  <div @click="selectTarget(target)" class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer">
+                    <div class="font-medium text-gray-900 dark:text-white" x-text="target.target_id"></div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400" x-text="target.name"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 스키마 정보 표시 -->
+        <div x-show="selectedCategorySchema" class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+          <h4 class="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">카테고리 스키마 정보</h4>
+          <div class="text-xs text-blue-700 dark:text-blue-300">
+            <p>버전: <span x-text="selectedCategorySchema.version"></span></p>
+            <p>필수 필드: <span x-text="getRequiredFields()"></span></p>
+            <p>저장 방식: <span x-text="selectedCategorySchema.is_timeseries ? '시계열' : '일반'"></span></p>
+          </div>
+        </div>
+
+        <!-- 시계열 데이터 옵션 -->
+        <div x-show="selectedCategorySchema && selectedCategorySchema.is_timeseries" class="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
+          <h4 class="text-sm font-medium text-yellow-900 dark:text-yellow-100 mb-2">시계열 데이터 옵션</h4>
+          <div class="flex items-center space-x-4">
+            <label class="flex items-center">
+              <input type="radio" x-model="newData.saveMode" value="current" class="mr-2">
+              <span class="text-sm">현재 데이터 업데이트</span>
+            </label>
+            <label class="flex items-center">
+              <input type="radio" x-model="newData.saveMode" value="timeseries" class="mr-2">
+              <span class="text-sm">시계열 히스토리 추가</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 동적 폼 필드 -->
+        <div x-show="selectedCategorySchema" class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">데이터 입력</label>
+          <div class="space-y-3">
+            <template x-for="field in getSchemaFields()" :key="field.name">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <span x-text="field.name"></span>
+                  <span x-show="field.required" class="text-red-500">*</span>
+                </label>
+                <input x-model="newData.formData[field.name]" :type="getFieldType(field)" :required="field.required" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white" :placeholder="field.description || field.name">
+                <p x-show="field.description" class="text-xs text-gray-500 dark:text-gray-400 mt-1" x-text="field.description"></p>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 파일 업로드 -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">파일 첨부</label>
+          <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md p-6 text-center">
+            <input type="file" multiple @change="handleFileUpload($event)" class="hidden" id="fileInput">
+            <div x-show="uploadedFiles.length === 0">
+              <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                <label for="fileInput" class="font-medium text-blue-600 hover:text-blue-500 cursor-pointer">파일 선택</label>
+                또는 드래그 앤 드롭
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">PDF, 이미지, 문서 등 모든 파일 형식 지원</p>
+            </div>
+            <div x-show="uploadedFiles.length > 0" class="space-y-2">
+              <template x-for="file in uploadedFiles" :key="file.name">
+                <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                  <div class="flex items-center space-x-2">
+                    <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0v12h8V4H6z" clip-rule="evenodd" />
+                    </svg>
+                    <span class="text-sm text-gray-700 dark:text-gray-300" x-text="file.name"></span>
+                    <span class="text-xs text-gray-500" x-text="window.formatFileSize(file.size)"></span>
+                  </div>
+                  <button @click="removeFile(file)" class="text-red-500 hover:text-red-700">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              </template>
+              <button @click="document.getElementById('fileInput').click()" class="text-sm text-blue-600 hover:text-blue-500">
+                + 파일 추가
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- JSON 직접 입력 (고급 모드) -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">JSON 직접 입력 (고급 모드)</label>
+            <button type="button" @click="toggleAdvancedMode()" class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+              <span x-text="advancedMode ? '폼 모드로' : '고급 모드로'"></span>
+            </button>
+          </div>
+          <textarea x-show="advancedMode" x-model="newData.jsonData" rows="8" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono text-sm" placeholder='{"bp": 120, "hr": 72, "spo2": 98}'></textarea>
+          <p x-show="advancedMode" class="text-xs text-gray-500 dark:text-gray-400 mt-1">유효한 JSON 형식으로 입력하세요.</p>
+        </div>
+
+        <!-- 검증 결과 표시 -->
+        <div x-show="validationResult" class="mb-4 p-4 rounded-md" :class="validationResult.valid ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'">
+          <div class="flex items-center">
+            <div class="flex-shrink-0">
+              <svg x-show="validationResult.valid" class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+              </svg>
+              <svg x-show="!validationResult.valid" class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+              </svg>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium" :class="validationResult.valid ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'" x-text="validationResult.valid ? '데이터가 유효합니다' : '데이터 검증 실패'"></h3>
+              <div x-show="validationResult.errors.length > 0" class="mt-2 text-sm" :class="validationResult.valid ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'">
+                <template x-for="error in validationResult.errors" :key="error">
+                  <p x-text="error"></p>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-2">
+          <button type="button" @click="showAddDataModal = false" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors">
+            취소
+          </button>
+          <button type="button" @click="validateData()" class="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors">
+            검증
+          </button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+            <span x-text="editingRecord ? '수정' : '추가'"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function dataExplorerData(initialOrgId) {
+    const orgId = initialOrgId;
+    return {
+      loading: false,
+      showModal: false,
+      showAddDataModal: false,
+      showTargetDropdown: false,
+      selectedRecord: null,
+      editingRecord: null,
+      data: [],
+      filteredData: [],
+      categories: [],
+      filteredTargets: [],
+      selectedCategorySchema: null,
+      validationResult: null,
+      advancedMode: false,
+      currentPage: 1,
+      pageSize: 20,
+      filters: {
+        category: '',
+        startDate: '',
+        endDate: ''
+      },
+      newData: {
+        category: '',
+        target_id: '',
+        jsonData: '',
+        formData: {},
+        saveMode: 'current'
+      },
+      uploadedFiles: [],
+
+      async init() {
+        await Promise.all([
+          this.loadData(),
+          this.loadCategories()
+        ]);
+      },
+
+      get paginatedData() {
+        const start = (this.currentPage - 1) * this.pageSize;
+        const end = start + this.pageSize;
+        return this.filteredData.slice(start, end);
+      },
+
+      get totalPages() {
+        return Math.ceil(this.filteredData.length / this.pageSize);
+      },
+
+      async loadData() {
+        this.loading = true;
+        try {
+          const response = await apiCall('/api/manage/data/explore?org_id=' + orgId);
+          this.data = response.data;
+          this.applyFilters();
+        } catch (error) {
+          console.error('Failed to load data:', error);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async loadCategories() {
+        try {
+          const response = await apiCall('/api/manage/data/categories?org_id=' + orgId);
+          this.categories = response.data || [];
+        } catch (error) {
+          console.error('Failed to load categories:', error);
+        }
+      },
+
+      async searchTargets() {
+        if (!this.newData.target_id || this.newData.target_id.length < 2) {
+          this.filteredTargets = [];
+          return;
+        }
+
+        try {
+          const response = await apiCall(`/api/manage/data/targets/search?q=${encodeURIComponent(this.newData.target_id)}&category=${this.newData.category}`);
+          this.filteredTargets = response.data || [];
+        } catch (error) {
+          console.error('Failed to search targets:', error);
+          this.filteredTargets = [];
+        }
+      },
+
+      selectTarget(target) {
+        this.newData.target_id = target.target_id;
+        this.showTargetDropdown = false;
+      },
+
+      onCategoryChange() {
+        this.selectedCategorySchema = null;
+        this.newData.formData = {};
+        this.validationResult = null;
+        this.newData.saveMode = 'current';
+
+        if (this.newData.category) {
+          const category = this.categories.find(c => c.category_name === this.newData.category);
+          if (category) {
+            this.selectedCategorySchema = category;
+            // 시계열 카테고리의 경우 기본값을 timeseries로 설정
+            if (category.is_timeseries) {
+              this.newData.saveMode = 'timeseries';
+            }
+          }
+        }
+      },
+
+      getSchemaFields() {
+        if (!this.selectedCategorySchema || !this.selectedCategorySchema.schema) {
+          return [];
+        }
+
+        try {
+          const schema = typeof this.selectedCategorySchema.schema === 'string' ?
+            JSON.parse(this.selectedCategorySchema.schema) :
+            this.selectedCategorySchema.schema;
+
+          if (schema.fields) {
+            return Object.entries(schema.fields).map(([name, field]) => ({
+              name,
+              ...field,
+              required: field.required || false
+            }));
+          }
+        } catch (error) {
+          console.error('Failed to parse schema:', error);
+        }
+
+        return [];
+      },
+
+      getRequiredFields() {
+        const fields = this.getSchemaFields();
+        return fields.filter(f => f.required).map(f => f.name).join(', ');
+      },
+
+      getFieldType(field) {
+        if (field.type === 'number') return 'number';
+        if (field.type === 'boolean') return 'checkbox';
+        return 'text';
+      },
+
+      toggleAdvancedMode() {
+        this.advancedMode = !this.advancedMode;
+        if (this.advancedMode) {
+          // 폼 데이터를 JSON으로 변환
+          this.newData.jsonData = JSON.stringify(this.newData.formData, null, 2);
+        } else {
+          // JSON을 폼 데이터로 변환
+          try {
+            const jsonData = JSON.parse(this.newData.jsonData);
+            this.newData.formData = jsonData;
+          } catch (error) {
+            console.error('Failed to parse JSON:', error);
+          }
+        }
+      },
+
+      async validateData() {
+        if (!this.newData.category) {
+          alert('카테고리를 선택해주세요.');
+          return;
+        }
+
+        let dataToValidate;
+        if (this.advancedMode) {
+          try {
+            dataToValidate = JSON.parse(this.newData.jsonData);
+          } catch (error) {
+            this.validationResult = {
+              valid: false,
+              errors: ['JSON 형식이 올바르지 않습니다.']
+            };
+            return;
+          }
+        } else {
+          dataToValidate = this.newData.formData;
+        }
+
+        try {
+          const response = await apiCall(` / api / manage / data / validate / $ {
+              this.newData.category
+            } ? org_id = $ {
+              orgId
+            }
+            `, {
+            method: 'POST',
+            body: JSON.stringify({
+              data: dataToValidate
+            })
+          });
+          this.validationResult = response.data;
+        } catch (error) {
+          console.error('Failed to validate data:', error);
+          this.validationResult = {
+            valid: false,
+            errors: ['데이터 검증 중 오류가 발생했습니다.']
+          };
+        }
+      },
+
+      applyFilters() {
+        this.filteredData = this.data.filter(item => {
+          let match = true;
+
+          if (this.filters.category && item.category !== this.filters.category) {
+            match = false;
+          }
+
+          if (this.filters.startDate) {
+            const itemDate = new Date(item.timestamp);
+            const startDate = new Date(this.filters.startDate);
+            if (itemDate < startDate) match = false;
+          }
+
+          if (this.filters.endDate) {
+            const itemDate = new Date(item.timestamp);
+            const endDate = new Date(this.filters.endDate);
+            endDate.setHours(23, 59, 59, 999);
+            if (itemDate > endDate) match = false;
+          }
+
+          return match;
+        });
+
+        this.currentPage = 1;
+      },
+
+      resetFilters() {
+        this.filters = {
+          category: '',
+          startDate: '',
+          endDate: ''
+        };
+        this.applyFilters();
+      },
+
+      previousPage() {
+        if (this.currentPage > 1) {
+          this.currentPage--;
+        }
+      },
+
+      nextPage() {
+        if (this.currentPage < this.totalPages) {
+          this.currentPage++;
+        }
+      },
+
+      viewDetails(record) {
+        this.selectedRecord = record;
+        this.showModal = true;
+      },
+
+      editRecord(record) {
+        this.editingRecord = record;
+        this.newData = {
+          category: record.category,
+          target_id: record.target_id || '',
+          jsonData: JSON.stringify(record.data, null, 2),
+          formData: record.data
+        };
+        this.onCategoryChange();
+        this.showAddDataModal = true;
+      },
+
+      async saveData() {
+        try {
+          let dataObj;
+          if (this.advancedMode) {
+            dataObj = JSON.parse(this.newData.jsonData);
+          } else {
+            dataObj = this.newData.formData;
+          }
+
+          // FormData 생성 (파일 업로드 지원)
+          const formData = new FormData();
+          formData.append('category_data', JSON.stringify(dataObj));
+          formData.append('target_id', this.newData.target_id);
+
+          // 시계열 데이터 저장 모드 추가
+          if (this.selectedCategorySchema && this.selectedCategorySchema.is_timeseries) {
+            formData.append('save_mode', this.newData.saveMode);
+          }
+
+          // 파일 첨부
+          this.uploadedFiles.forEach((file, index) => {
+            formData.append(`
+            files`, file);
+          });
+
+          let response;
+          let url;
+
+          if (this.editingRecord) {
+            // 수정
+            url = ` / api / targets / $ {
+              this.newData.target_id
+            }
+            /categories/$ {
+              this.newData.category
+            } ? org_id = $ {
+              orgId
+            }
+            `;
+            response = await fetch(url, {
+              method: 'PUT',
+              body: formData
+            });
+          }
+
+          // 새로 추가 - 시계열 데이터인 경우 다른 엔드포인트 사용
+          if (this.selectedCategorySchema && this.selectedCategorySchema.is_timeseries && this.newData.saveMode === 'timeseries') {
+            url = ` / api / targets / $ {
+              this.newData.target_id
+            }
+            /categories/$ {
+              this.newData.category
+            }
+            /timeseries?org_id=${orgId}`;
+          } else {
+            url = `/api/targets/${this.newData.target_id}/categories/${this.newData.category}?org_id=${orgId}`;
+          }
+
+          response = await fetch(url, {
+            method: 'POST',
+            body: formData
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            await this.loadData();
+            this.showAddDataModal = false;
+            this.resetForm();
+            alert('데이터가 성공적으로 저장되었습니다.');
+          } else {
+            throw new Error(result.error?.message || '저장 실패');
+          }
+        } catch (error) {
+          console.error('Failed to save data:', error);
+          alert('데이터 저장에 실패했습니다: ' + error.message);
+        }
+      },
+
+      resetForm() {
+        this.newData = {
+          category: '',
+          target_id: '',
+          jsonData: '',
+          formData: {},
+          saveMode: 'current'
+        };
+        this.editingRecord = null;
+        this.selectedCategorySchema = null;
+        this.validationResult = null;
+        this.advancedMode = false;
+        this.showTargetDropdown = false;
+        this.uploadedFiles = [];
+      },
+
+      handleFileUpload(event) {
+        const files = Array.from(event.target.files);
+        this.uploadedFiles = [...this.uploadedFiles, ...files];
+      },
+
+      removeFile(fileToRemove) {
+        this.uploadedFiles = this.uploadedFiles.filter(file => file !== fileToRemove);
+      },
+
+      formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      },
+
+      downloadRecord(record) {
+        const dataStr = JSON.stringify(record, null, 2);
+        const dataBlob = new Blob([dataStr], {
+          type: 'application/json'
+        });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `record_${record.record_id}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      },
+
+      async exportData() {
+        const dataStr = JSON.stringify(this.filteredData, null, 2);
+        const dataBlob = new Blob([dataStr], {
+          type: 'application/json'
+        });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `data_export_${new Date().toISOString().split('T')[0]}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      },
+
+      async refreshData() {
+        await this.loadData();
+      },
+
+      getCategoryColor(category) {
+        const colors = {
+          'vital': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200',
+          'patient_info': 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200',
+          'lab_results': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200',
+          'medication': 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200'
+        };
+        return colors[category] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-200';
+      }
+    }
+  }
+</script>
+
+{{template "footer" .}}

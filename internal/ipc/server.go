@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	DefaultSocketPath = "/tmp/tmidb-supervisor.sock"
+	DefaultSocketPath = "/bin/tmidb-supervisor.sock"
 	MaxConnections    = 100
 	ReadTimeout       = 1 * time.Second
 	WriteTimeout      = 5 * time.Second
@@ -117,13 +117,17 @@ func (s *Server) Stop() error {
 	s.cancel()
 
 	if s.listener != nil {
-		s.listener.Close()
+		if err := s.listener.Close(); err != nil {
+			log.Printf("⚠️ Failed to close listener: %v", err)
+		}
 	}
 
 	// 모든 연결 종료
 	s.connMutex.Lock()
 	for _, conn := range s.connections {
-		conn.Conn.Close()
+		if err := conn.Conn.Close(); err != nil {
+			log.Printf("⚠️ Failed to close connection %s: %v", conn.ID, err)
+		}
 	}
 	s.connMutex.Unlock()
 
@@ -175,7 +179,9 @@ func (s *Server) acceptConnections() {
 
 		if connCount >= MaxConnections {
 			log.Printf("⚠️ Maximum connections reached, rejecting new connection")
-			conn.Close()
+			if err := conn.Close(); err != nil {
+				log.Printf("⚠️ Failed to close rejected connection: %v", err)
+			}
 			continue
 		}
 
@@ -198,7 +204,9 @@ func (s *Server) handleConnection(netConn net.Conn) {
 
 	// Go 1.24 기능: 연결별 정리 함수 설정
 	conn.cleanup = func() {
-		netConn.Close()
+		if err := netConn.Close(); err != nil {
+			log.Printf("⚠️ Failed to close netConn for %s: %v", connID, err)
+		}
 		s.removeConnection(connID)
 	}
 	// 연결 정리를 위한 finalizer 설정
@@ -229,7 +237,10 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		}
 
 		// 읽기 타임아웃 설정
-		netConn.SetReadDeadline(time.Now().Add(ReadTimeout))
+		if err := netConn.SetReadDeadline(time.Now().Add(ReadTimeout)); err != nil {
+			log.Printf("⚠️ Failed to set read deadline: %v", err)
+			return
+		}
 
 		// 메시지 읽기
 		line, err := conn.Reader.ReadString('\n')
@@ -285,7 +296,10 @@ func (s *Server) sendResponse(conn *Connection, response *Response) {
 	}
 
 	// 쓰기 타임아웃 설정
-	conn.Conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+	if err := conn.Conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
+		log.Printf("⚠️ Failed to set write deadline for response: %v", err)
+		return
+	}
 
 	// 응답 전송
 	_, err = conn.Writer.Write(append(data, '\n'))
@@ -294,7 +308,9 @@ func (s *Server) sendResponse(conn *Connection, response *Response) {
 		return
 	}
 
-	conn.Writer.Flush()
+	if err := conn.Writer.Flush(); err != nil {
+		log.Printf("❌ Failed to flush writer: %v", err)
+	}
 }
 
 // cleanupConnections 비활성 연결 정리
@@ -322,7 +338,9 @@ func (s *Server) cleanupInactiveConnections() {
 	for id, conn := range s.connections {
 		if conn.LastSeen.Before(cutoff) {
 			log.Printf("🧹 Cleaning up inactive connection: %s", id)
-			conn.Conn.Close()
+			if err := conn.Conn.Close(); err != nil {
+				log.Printf("⚠️ Failed to close inactive connection %s: %v", id, err)
+			}
 			delete(s.connections, id)
 		}
 	}
@@ -344,7 +362,9 @@ func (s *Server) removeConnection(connID string) {
 // removeSocketFile 소켓 파일 제거
 func (s *Server) removeSocketFile() error {
 	if _, err := os.Stat(s.socketPath); err == nil {
-		return os.Remove(s.socketPath)
+		if err := os.Remove(s.socketPath); err != nil {
+			return fmt.Errorf("failed to remove socket file %s: %w", s.socketPath, err)
+		}
 	}
 	return nil
 }
@@ -359,7 +379,9 @@ func (s *Server) cleanup() {
 		cleanupFunc()
 	}
 
-	s.Stop()
+	if err := s.Stop(); err != nil {
+		log.Printf("⚠️ Failed to stop IPC server during cleanup: %v", err)
+	}
 }
 
 // AddCleanupFunc 정리 함수 추가

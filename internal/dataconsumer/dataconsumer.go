@@ -20,11 +20,11 @@ type DataConsumer struct {
 
 // DataPoint 처리할 데이터 포인트 구조체
 type DataPoint struct {
-	ID        string                 `json:"id"`
-	Timestamp time.Time              `json:"timestamp"`
-	Source    string                 `json:"source"`
-	Category  string                 `json:"category"`
-	Data      map[string]interface{} `json:"data"`
+	ID        string         `json:"id"`
+	Timestamp time.Time      `json:"timestamp"`
+	Source    string         `json:"source"`
+	Category  string         `json:"category"`
+	Data      map[string]any `json:"data"`
 }
 
 // New DataConsumer 인스턴스를 생성합니다
@@ -51,7 +51,7 @@ func (dc *DataConsumer) Start(ctx context.Context) error {
 	}
 
 	// 기본 소비자 생성
-	base, err := busconsumer.NewBaseConsumer(ctx, database.DB)
+	base, err := busconsumer.NewBaseConsumer(ctx, database.CoreDB)
 	if err != nil {
 		return fmt.Errorf("failed to create base consumer: %w", err)
 	}
@@ -79,8 +79,8 @@ func (dc *DataConsumer) Start(ctx context.Context) error {
 func (dc *DataConsumer) connectDatabase() error {
 	for i := 0; i < 15; i++ {
 		// 전역 DB 변수 확인
-		if database.DB == nil {
-			log.Printf("⏳ Data Consumer: database.DB is nil (attempt %d/15)", i+1)
+		if database.CoreDB == nil {
+			log.Printf("⏳ Data Consumer: database.CoreDB is nil (attempt %d/15)", i+1)
 		} else {
 			// DB 연결 상태 확인
 			if err := database.CheckDatabaseHealth(); err != nil {
@@ -92,9 +92,9 @@ func (dc *DataConsumer) connectDatabase() error {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	
+
 	// 최종 실패 시 상세 에러 정보 제공
-	if database.DB == nil {
+	if database.CoreDB == nil {
 		return fmt.Errorf("failed to connect to database after 15 attempts: global DB variable is nil - ensure database.InitDatabase() was called successfully")
 	}
 	return fmt.Errorf("failed to connect to database after 15 attempts: database health check failed")
